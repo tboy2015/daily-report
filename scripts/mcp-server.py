@@ -12,6 +12,7 @@ import sys
 import io
 import contextlib
 from datetime import datetime
+from typing import List, Dict, Optional, Tuple, Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -43,6 +44,42 @@ PROJECT_NAME_MAP = {
     "dm-mcp-server": "达梦 MCP 工具",
     "mysql2dm-spring-boot-starter": "MySQL 转达梦适配组件",
 }
+
+# 全局配置：技术栈标记定义
+TECH_STACK_MARKERS = {
+    "Java": ["src/main/java", ".java"],
+    "Vue": [".vue", "src/views/", "src/components/"],
+    "TypeScript/JavaScript": [".tsx", ".jsx", ".ts", ".js"],
+    "Maven": ["pom.xml", "maven"],
+    "Node.js": ["package.json", "yarn.lock", "npm"],
+    "Docker": ["docker", "dockerfile", "docker-compose"],
+}
+
+# 全局配置：工作类型关键词
+WORK_TYPE_KEYWORDS = {
+    "功能开发": ["功能", "完成", "feat:", "feature"],
+    "前端开发": ["页面", "组件", "ui", "frontend"],
+    "后端开发": ["后端", "接口", "服务"],
+    "问题修复": ["fix", "bug", "修复", "bugfix", "问题"],
+    "配置更新": ["配置", "依赖", "config", "update"],
+    "文档整理": ["文档", "说明", "doc"],
+}
+
+# 全局配置：工作类型文件标记
+WORK_TYPE_MARKERS = {
+    "功能开发": ["src/main/java", "src/service/", "src/controller/"],
+    "前端开发": [".vue", ".tsx", ".jsx", "src/pages/", "src/components/", "src/views/"],
+    "后端开发": ["src/main/java", "controller", "service", "mapper", "dto", "entity"],
+    "问题修复": [],  # 通过关键词识别
+    "配置更新": ["pom.xml", "package.json", "application.yml", "docker"],
+    "文档整理": [".md", "readme", "doc"],
+}
+
+# 全局配置：核心逻辑关键词
+CORE_LOGIC_KEYWORDS = [
+    "队列", "异步", "缓存", "连接池", "线程", "事务", "分布式",
+    "组件", "路由", "状态", "生命周期", "Hook", "模块化"
+]
 
 
 def _run_git_command(repo_path, cmd):
@@ -269,30 +306,39 @@ def _contains_any(texts, keywords):
     return any(keyword.lower() in joined for keyword in keywords)
 
 
-def _infer_tech_stack(files):
+def _infer_tech_stack(files: Optional[List[str]]) -> List[str]:
     """从文件列表推断技术栈"""
-    tech_stacks = []
-    file_text = "\n".join(files).lower()
+    # 输入验证：检查files是否为None或非列表类型
+    if not files or not isinstance(files, (list, tuple)):
+        return []
 
-    if any(marker in file_text for marker in ["src/main/java", ".java"]):
-        tech_stacks.append("Java")
-    if any(marker in file_text for marker in [".vue", "src/views/", "src/components/"]):
-        tech_stacks.append("Vue")
-    if any(marker in file_text for marker in [".tsx", ".jsx", ".ts", ".js"]):
-        tech_stacks.append("TypeScript/JavaScript")
-    if any(marker in file_text for marker in ["pom.xml", "maven"]):
-        tech_stacks.append("Maven")
-    if any(marker in file_text for marker in ["package.json", "yarn.lock", "npm"]):
-        tech_stacks.append("Node.js")
-    if any(marker in file_text for marker in ["docker", "dockerfile", "docker-compose"]):
-        tech_stacks.append("Docker")
+    try:
+        # 确保所有元素都是字符串
+        file_text = "\n".join(str(f) for f in files).lower()
+    except Exception:
+        return []
+
+    tech_stacks = []
+
+    for tech, markers in TECH_STACK_MARKERS.items():
+        if any(marker in file_text for marker in markers):
+            tech_stacks.append(tech)
 
     return tech_stacks
 
 
-def _estimate_code_volume(files):
+def _estimate_code_volume(files: Optional[List[str]]) -> str:
     """估算代码量（基于受影响文件数）"""
-    code_files = [f for f in files if not f.startswith(".") and not f.endswith(".md")]
+    # 输入验证：检查files是否为None或非列表类型
+    if not files or not isinstance(files, (list, tuple)):
+        return "~10"
+
+    try:
+        # 确保所有元素都是字符串
+        code_files = [f for f in files if isinstance(f, str) and not f.startswith(".") and not f.endswith(".md")]
+    except Exception:
+        return "~10"
+
     count = len(code_files)
     if count == 0:
         return "~10"
@@ -304,9 +350,10 @@ def _estimate_code_volume(files):
         return f"~{count * 100}"
 
 
-def _extract_summary_from_subject(subject):
+def _extract_summary_from_subject(subject: Optional[str]) -> str:
     """从 commit message 提取概括"""
-    if not subject:
+    # 输入验证：检查subject是否为None或非字符串
+    if not subject or not isinstance(subject, str):
         return "完成代码调整"
 
     cleaned = subject.replace("feat:", "").replace("fix:", "").strip()
@@ -315,49 +362,59 @@ def _extract_summary_from_subject(subject):
     return cleaned
 
 
-def _identify_work_type(subjects, files):
+def _identify_work_type(subjects: Optional[List[str]], files: Optional[List[str]]) -> Dict[str, float]:
     """识别工作类型并返回优先级"""
-    file_text = "\n".join(files).lower()
-    subject_text = "\n".join(subjects).lower()
+    # 输入验证
+    if not subjects or not isinstance(subjects, (list, tuple)):
+        subjects = []
+    if not files or not isinstance(files, (list, tuple)):
+        files = []
 
-    work_types = {}
+    try:
+        # 确保所有元素都是字符串
+        file_text = "\n".join(str(f) for f in files).lower()
+        subject_text = "\n".join(str(s) for s in subjects).lower()
+    except Exception:
+        return {}
+
+    work_types: Dict[str, float] = {}
 
     # 功能开发
-    if any(kw in subject_text for kw in ["功能", "完成", "feat:", "feature"]) or \
-       any(marker in file_text for marker in ["src/main/java", "src/service/", "src/controller/"]):
+    if any(kw in subject_text for kw in WORK_TYPE_KEYWORDS.get("功能开发", [])) or \
+       any(marker in file_text for marker in WORK_TYPE_MARKERS.get("功能开发", [])):
         work_types["功能开发"] = 1.0
 
     # 前端开发
-    if any(kw in subject_text for kw in ["页面", "组件", "ui", "frontend"]) or \
-       any(marker in file_text for marker in [".vue", ".tsx", ".jsx", "src/pages/", "src/components/", "src/views/"]):
+    if any(kw in subject_text for kw in WORK_TYPE_KEYWORDS.get("前端开发", [])) or \
+       any(marker in file_text for marker in WORK_TYPE_MARKERS.get("前端开发", [])):
         work_types["前端开发"] = 0.9
 
     # 后端开发
-    if any(marker in file_text for marker in ["src/main/java", "controller", "service", "mapper", "dto", "entity"]):
+    if any(marker in file_text for marker in WORK_TYPE_MARKERS.get("后端开发", [])):
         work_types["后端开发"] = 0.8
 
     # 问题修复
-    if any(kw in subject_text for kw in ["fix", "bug", "修复", "bugfix", "问题"]):
+    if any(kw in subject_text for kw in WORK_TYPE_KEYWORDS.get("问题修复", [])):
         work_types["问题修复"] = 1.0
 
     # 配置更新
-    if any(kw in subject_text for kw in ["配置", "依赖", "config", "update"]) or \
-       any(marker in file_text for marker in ["pom.xml", "package.json", "application.yml", "docker"]):
+    if any(kw in subject_text for kw in WORK_TYPE_KEYWORDS.get("配置更新", [])) or \
+       any(marker in file_text for marker in WORK_TYPE_MARKERS.get("配置更新", [])):
         work_types["配置更新"] = 0.7
 
     # 文档整理
-    if any(marker in file_text for marker in [".md", "readme", "doc"]):
+    if any(marker in file_text for marker in WORK_TYPE_MARKERS.get("文档整理", [])):
         work_types["文档整理"] = 0.6
 
     return work_types
 
 
-def _extract_detailed_work_items(activity, conversation_content=""):
+def _extract_detailed_work_items(activity: Optional[Dict[str, Any]], conversation_content: str = "") -> Dict[str, List[str]]:
     """
     从 activity（git 数据）和对话内容提取详细的工作项。
 
     输入：
-    - activity: {"subjects": [...], "files": [...]}
+    - activity: {"subjects": [...], "files": [...]} 或 None
     - conversation_content: 对话内容文本
 
     输出：
@@ -371,10 +428,20 @@ def _extract_detailed_work_items(activity, conversation_content=""):
         ...
     }
     """
+    # 输入验证：检查activity是否为None或无效
+    if not activity or not isinstance(activity, dict):
+        return {}
+
     subjects = activity.get("subjects", [])
     files = activity.get("files", [])
 
-    result = {}
+    # 确保subjects和files是列表
+    if not isinstance(subjects, (list, tuple)):
+        subjects = []
+    if not isinstance(files, (list, tuple)):
+        files = []
+
+    result: Dict[str, List[str]] = {}
     work_types = _identify_work_type(subjects, files)
 
     if not work_types:
@@ -385,11 +452,12 @@ def _extract_detailed_work_items(activity, conversation_content=""):
     sorted_types = sorted(work_types.items(), key=lambda x: -x[1])
 
     for work_type, priority in sorted_types:
-        items = []
+        items: List[str] = []
 
         if work_type in ("功能开发", "前端开发"):
             # 详细描述格式：概括 + 实现方式 + 技术栈 + 核心逻辑 + 代码量
-            summary = _extract_summary_from_subject(subjects[0] if subjects else "")
+            first_subject = subjects[0] if subjects else None
+            summary = _extract_summary_from_subject(first_subject)
 
             # 技术栈
             tech_stack = _infer_tech_stack(files)
@@ -398,9 +466,7 @@ def _extract_detailed_work_items(activity, conversation_content=""):
             # 核心逻辑 - 从对话内容提取关键词
             logic_keywords = []
             if conversation_content:
-                keywords = ["队列", "异步", "缓存", "连接池", "线程", "事务", "分布式",
-                           "组件", "路由", "状态", "生命周期", "Hook", "模块化"]
-                for kw in keywords:
+                for kw in CORE_LOGIC_KEYWORDS:
                     if kw.lower() in conversation_content.lower():
                         logic_keywords.append(kw)
             logic_text = "、".join(logic_keywords[:3]) if logic_keywords else "业务逻辑"
