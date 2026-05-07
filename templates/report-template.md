@@ -11,19 +11,10 @@
 {{#each projects}}
 {{index}}、项目名称：{{name}}
 {{#each categories}}
-{{#if (eq category "功能开发")}}
 · {{category}}：
 {{#each items}}
   - {{this}}
 {{/each}}
-{{else if (eq category "前端开发")}}
-· {{category}}：
-{{#each items}}
-  - {{this}}
-{{/each}}
-{{else}}
-· {{category}}：{{description}}
-{{/if}}
 {{/each}}
 
 {{/each}}
