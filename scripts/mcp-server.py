@@ -546,6 +546,10 @@ def _summarize_activity(activity):
 
 def _build_daily_report(date_str: str):
     cn_date = _format_cn_date(date_str)
+
+    # 采集当天的对话内容
+    conversation_content = _collect_conversations(date_str) or ""
+
     activities = []
     for repo_name, repo_path in _find_git_repos(WORK_DIR):
         activity = _repo_activity(repo_name, repo_path, date_str)
@@ -568,7 +572,7 @@ def _build_daily_report(date_str: str):
     if activities:
         for index, activity in enumerate(activities, 1):
             lines.append(f"{index}、项目名称：{activity['display_name']}")
-            work_items = _extract_detailed_work_items(activity, "")
+            work_items = _extract_detailed_work_items(activity, conversation_content)
             for category, items in work_items.items():
                 lines.append(f"· {category}：")
                 for item in items:
@@ -602,7 +606,7 @@ def _build_daily_report(date_str: str):
 
     # 从新的详细项中提取已完成项
     if primary:
-        work_items = _extract_detailed_work_items(primary, "")
+        work_items = _extract_detailed_work_items(primary, conversation_content)
         completed_items = []
         for category, items in work_items.items():
             if items:
