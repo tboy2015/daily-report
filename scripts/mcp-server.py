@@ -30,17 +30,17 @@ REPORTS_DIR = "/Users/tboy/Documents/daily-reports"
 CONFIG_PATH = "/Users/tboy/.claude/daily-report-config.json"
 
 PROJECT_NAME_MAP = {
-    "anbp": "成就中心",
-    "ANBP": "成就中心",
-    "achievement-center-console-dev": "成就中心",
-    "platform-management-ui": "平台管理",
-    "allinone": "全网诉求与资源管理中心",
-    "iot": "物联网平台",
+    "anbp": "研发平台-成果中心",
+    "ANBP": "研发平台-成果中心",
+    "achievement-center-console-dev": "研发平台-成果中心",
+    "platform-management-ui": "研发平台-门户管理",
+    "allinone": "一体化项目",
+    "iot": "物联网威胁监测告警平台",
     "IoT-Threat-Capture-Monitoring-Alerting": "物联网威胁监测告警平台",
     "IoT-Threat-Capture-Monitoring-Alerting-front": "物联网威胁监测告警平台",
     "dms-project": "DMS 项目",
     "dw-production-command-center": "数字化生产指挥中心",
-    "ipd-pm-platform": "IPD 项目管理平台",
+    "ipd-pm-platform": "研发平台-IPD 项目协同",
     "dm-mcp-server": "达梦 MCP 工具",
     "mysql2dm-spring-boot-starter": "MySQL 转达梦适配组件",
 }
@@ -478,9 +478,7 @@ def _extract_detailed_work_items(activity: Optional[Dict[str, Any]], conversatio
             item_lines = [
                 f"概括：{summary}",
                 f"实现方式：设计并实现{work_type.replace('开发', '')}功能模块",
-                f"技术栈：{tech_text}",
-                f"核心逻辑：{logic_text}处理",
-                f"代码量：新增/修改 {code_volume} 行"
+                f"核心逻辑：{logic_text}处理"
             ]
             items.append("\n".join(item_lines))
 
