@@ -3,36 +3,69 @@
 ## 前置条件
 
 - [Claude Code](https://claude.ai/code) 已安装并登录
-- Python 3.10+
+- Python 3.10+（见下方安装说明）
 - Git
 
 ---
 
 ## 步骤一：克隆仓库
 
-将仓库放到任意目录，建议放在 `~/.claude/skills/` 下便于管理：
+将仓库放到 `~/.claude/skills/` 下，Claude Code 可以直接识别：
 
 ```bash
+# macOS / Linux
 git clone <repo-url> ~/.claude/skills/daily-report
-cd ~/.claude/skills/daily-report
+
+# Windows（PowerShell）
+git clone <repo-url> "$env:USERPROFILE\.claude\skills\daily-report"
 ```
 
 ---
 
 ## 步骤二：安装 Python 依赖
 
-```bash
-pip install mcp
+**先确认 Python 可用：**
+
+```
+# macOS / Linux
+python3 --version
+
+# Windows
+py --version
 ```
 
-> 如果系统有多个 Python，用 `pip3` 或 `python3 -m pip install mcp`。
+如果提示"命令未找到"或打开了应用商店，说明 Python 未安装，参考下方"安装 Python"。
+
+**安装依赖：**
+
+```bash
+# macOS / Linux
+pip3 install mcp
+# 或
+python3 -m pip install mcp
+
+# Windows
+py -m pip install mcp
+```
+
+### 安装 Python（如未安装）
+
+前往 `https://www.python.org/downloads/` 下载 Windows 安装包。
+
+> **安装时必须勾选 "Add python.exe to PATH"**，否则命令行找不到 Python。
+
+安装完后重新打开终端再运行 `py -m pip install mcp`。
 
 ---
 
 ## 步骤三：填写配置文件
 
 ```bash
+# macOS / Linux
 cp config.example.json config.json
+
+# Windows（PowerShell）
+Copy-Item config.example.json config.json
 ```
 
 用编辑器打开 `config.json`，填写所有字段：
@@ -71,7 +104,12 @@ cp config.example.json config.json
 | `smtp_password` | QQ 邮箱用"授权码"，企业邮箱用密码或应用专用密码 |
 | `to_emails` | 收件人列表，可填多个 |
 
-**自定义项目中文名**（可选）：在 `config.json` 中加一节，将仓库目录名映射为业务名：
+**Windows 路径写法：** 用正斜杠或双反斜杠均可：
+```json
+"work_dir": "C:/Users/你的用户名/work/code"
+```
+
+**自定义项目中文名**（可选）：将仓库目录名映射为业务名：
 
 ```json
 "project_name_map": {
@@ -101,13 +139,12 @@ cp config.example.json config.json
 ## 步骤四：注册 MCP 服务
 
 ```bash
+# macOS / Linux
 claude mcp add daily-report -- python3 ~/.claude/skills/daily-report/scripts/mcp-server.py
-```
 
-> Windows 路径示例：
-> ```
-> claude mcp add daily-report -- python C:\Users\你的用户名\.claude\skills\daily-report\scripts\mcp-server.py
-> ```
+# Windows（PowerShell）
+claude mcp add daily-report -- py "$env:USERPROFILE\.claude\skills\daily-report\scripts\mcp-server.py"
+```
 
 验证注册成功：
 
@@ -115,13 +152,11 @@ claude mcp add daily-report -- python3 ~/.claude/skills/daily-report/scripts/mcp
 claude mcp list
 ```
 
-输出中应出现 `daily-report`。
+输出中出现 `daily-report` 即可。
 
 ---
 
 ## 步骤五：注册 Skill
-
-将 `SKILL.md` 复制到 Claude Code 的 skills 目录：
 
 ```bash
 # macOS / Linux
@@ -158,7 +193,7 @@ Copy-Item "$env:USERPROFILE\.claude\skills\daily-report\SKILL.md" "$env:USERPROF
 
 ## 调整日报格式
 
-只需编辑 `templates/report-template.md`，保存后下次生成即生效。无需改代码。
+只需编辑 `templates/report-template.md`，保存后下次生成即生效，无需改代码。
 
 模板支持的变量：`{{日期}}`、`{{greeting}}`、`{{name}}`、`{{company}}`、`{{department}}`、`{{phone}}`、`{{email}}`、`{{#each projects}}`、`{{#each plans}}`、`{{#each milestones}}`。
 
@@ -166,11 +201,17 @@ Copy-Item "$env:USERPROFILE\.claude\skills\daily-report\SKILL.md" "$env:USERPROF
 
 ## 常见问题
 
+**`pip` 不是内部命令**  
+用 `py -m pip install mcp`（Windows）或 `python3 -m pip install mcp`（macOS/Linux）代替。
+
+**`py` 也找不到**  
+Python 未安装，参考步骤二中的"安装 Python"。
+
 **MCP 工具无法调用**  
-运行 `claude mcp list` 确认 `daily-report` 状态为 enabled；若为 disabled，检查 Python 路径是否正确。
+运行 `claude mcp list` 确认 `daily-report` 状态为 enabled；若为 disabled，检查 Python 路径是否正确，可用 `py scripts/mcp-server.py` 手动运行看报什么错。
 
 **邮件发送失败**  
-QQ 邮箱需在"设置 → 账户"中开启 SMTP 并生成授权码；企业邮箱联系管理员确认 SMTP 地址和端口。
+QQ 邮箱需在"设置 → 账户"中开启 SMTP 并生成授权码（非登录密码）；企业邮箱联系管理员确认 SMTP 地址和端口。
 
 **扫描不到 git 提交**  
 检查 `config.json` 中 `paths.work_dir` 是否指向代码根目录，该目录下需包含 `.git` 子目录（或其子目录中有 `.git`）。
