@@ -24,6 +24,32 @@ git clone <repo-url> "$env:USERPROFILE\.claude\skills\daily-report"
 
 ## 步骤二：安装 Python 依赖
 
+有两种方式，推荐 **方案 A（uv）**，更轻量，不需要提前安装 Python。
+
+---
+
+### 方案 A：uv（推荐）
+
+uv 是一个独立的 Python 包管理器，自带 Python 运行时，无需手动安装 Python。
+
+**安装 uv：**
+
+```bash
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows（PowerShell）
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+安装完后重新打开终端，无需额外操作，uv 会在运行时自动下载依赖。
+
+> 步骤四注册 MCP 时需使用对应的 uv 命令，见下方说明。
+
+---
+
+### 方案 B：pip（已有 Python）
+
 **先确认 Python 可用：**
 
 ```
@@ -34,27 +60,18 @@ python3 --version
 py --version
 ```
 
-如果提示"命令未找到"或打开了应用商店，说明 Python 未安装，参考下方"安装 Python"。
+如果提示"命令未找到"或打开了 Microsoft Store，说明 Python 未安装。  
+前往 `https://www.python.org/downloads/` 下载安装，**安装时必须勾选 "Add python.exe to PATH"**，然后重新打开终端。
 
 **安装依赖：**
 
 ```bash
 # macOS / Linux
-pip3 install mcp
-# 或
 python3 -m pip install mcp
 
 # Windows
 py -m pip install mcp
 ```
-
-### 安装 Python（如未安装）
-
-前往 `https://www.python.org/downloads/` 下载 Windows 安装包。
-
-> **安装时必须勾选 "Add python.exe to PATH"**，否则命令行找不到 Python。
-
-安装完后重新打开终端再运行 `py -m pip install mcp`。
 
 ---
 
@@ -137,6 +154,18 @@ Copy-Item config.example.json config.json
 ---
 
 ## 步骤四：注册 MCP 服务
+
+**方案 A（uv）：**
+
+```bash
+# macOS / Linux
+claude mcp add daily-report -- uv run ~/.claude/skills/daily-report/scripts/mcp-server.py
+
+# Windows（PowerShell）
+claude mcp add daily-report -- uv run "$env:USERPROFILE\.claude\skills\daily-report\scripts\mcp-server.py"
+```
+
+**方案 B（pip）：**
 
 ```bash
 # macOS / Linux

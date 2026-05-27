@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# /// script
+# dependencies = ["mcp"]
+# ///
 """
 Daily Report MCP Server
 提供日报生成所需的工具：收集 git 提交、收集对话记录、保存日报、发送邮件
