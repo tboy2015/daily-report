@@ -195,8 +195,8 @@ claude mcp list
 # macOS / Linux
 cp ~/.claude/skills/daily-report/SKILL.md ~/.claude/skills/daily-report.md
 
-# Windows（PowerShell）
-Copy-Item "$env:USERPROFILE\.claude\skills\daily-report\SKILL.md" "$env:USERPROFILE\.claude\skills\daily-report.md"
+# Windows（cmd）
+copy "C:\Users\你的用户名\.claude\skills\daily-report\SKILL.md" "C:\Users\你的用户名\.claude\skills\daily-report.md"
 ```
 
 ---
