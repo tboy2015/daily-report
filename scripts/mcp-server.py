@@ -13,7 +13,7 @@ import sys
 import io
 import contextlib
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -87,45 +87,6 @@ def _get_project_name_map() -> dict:
     merged.update(cfg.get("project_name_map", {}))
     return merged
 
-
-# 向后兼容：保留模块级变量供旧代码引用
-PROJECT_NAME_MAP = _get_project_name_map()
-
-# 全局配置：技术栈标记定义
-TECH_STACK_MARKERS = {
-    "Java": ["src/main/java", ".java"],
-    "Vue": [".vue", "src/views/", "src/components/"],
-    "TypeScript/JavaScript": [".tsx", ".jsx", ".ts", ".js"],
-    "Maven": ["pom.xml", "maven"],
-    "Node.js": ["package.json", "yarn.lock", "npm"],
-    "Docker": ["docker", "dockerfile", "docker-compose"],
-}
-
-# 全局配置：工作类型关键词
-WORK_TYPE_KEYWORDS = {
-    "功能开发": ["功能", "完成", "feat:", "feature"],
-    "前端开发": ["页面", "组件", "ui", "frontend"],
-    "后端开发": ["后端", "接口", "服务"],
-    "问题修复": ["fix", "bug", "修复", "bugfix", "问题"],
-    "配置更新": ["配置", "依赖", "config", "update"],
-    "文档整理": ["文档", "说明", "doc"],
-}
-
-# 全局配置：工作类型文件标记
-WORK_TYPE_MARKERS = {
-    "功能开发": ["src/main/java", "src/service/", "src/controller/"],
-    "前端开发": [".vue", ".tsx", ".jsx", "src/pages/", "src/components/", "src/views/"],
-    "后端开发": ["src/main/java", "controller", "service", "mapper", "dto", "entity"],
-    "问题修复": [],  # 通过关键词识别
-    "配置更新": ["pom.xml", "package.json", "application.yml", "docker"],
-    "文档整理": [".md", "readme", "doc"],
-}
-
-# 全局配置：核心逻辑关键词
-CORE_LOGIC_KEYWORDS = [
-    "队列", "异步", "缓存", "连接池", "线程", "事务", "分布式",
-    "组件", "路由", "状态", "生命周期", "Hook", "模块化"
-]
 
 
 def _run_git_command(repo_path, cmd):
@@ -411,58 +372,9 @@ def _repo_activity(repo_name: str, repo_path: str, date_str: str):
     }
 
 
-def _contains_any(texts, keywords):
-    joined = "\n".join(texts).lower()
-    return any(keyword.lower() in joined for keyword in keywords)
-
-
-def _infer_tech_stack(files: Optional[List[str]]) -> List[str]:
-    """从文件列表推断技术栈"""
-    # 输入验证：检查files是否为None或非列表类型
-    if not files or not isinstance(files, (list, tuple)):
-        return []
-
-    try:
-        # 确保所有元素都是字符串
-        file_text = "\n".join(str(f) for f in files).lower()
-    except Exception:
-        return []
-
-    tech_stacks = []
-
-    for tech, markers in TECH_STACK_MARKERS.items():
-        if any(marker in file_text for marker in markers):
-            tech_stacks.append(tech)
-
-    return tech_stacks
-
-
-def _estimate_code_volume(files: Optional[List[str]]) -> str:
-    """估算代码量（基于受影响文件数）"""
-    # 输入验证：检查files是否为None或非列表类型
-    if not files or not isinstance(files, (list, tuple)):
-        return "~10"
-
-    try:
-        # 确保所有元素都是字符串
-        code_files = [f for f in files if isinstance(f, str) and not f.startswith(".") and not f.endswith(".md")]
-    except Exception:
-        return "~10"
-
-    count = len(code_files)
-    if count == 0:
-        return "~10"
-    elif count <= 3:
-        return f"~{count * 20}"
-    elif count <= 10:
-        return f"~{count * 50}"
-    else:
-        return f"~{count * 100}"
-
 
 def _extract_summary_from_subject(subject: Optional[str]) -> str:
     """从 commit message 提取概括，去除 conventional commit 前缀（含 scope）"""
-    import re
     if not subject or not isinstance(subject, str):
         return "完成代码调整"
     # 剥离 feat:、fix:、feat(scope):、fix(scope):、feat(scope)!: 等前缀
@@ -540,12 +452,7 @@ def _identify_work_type(subjects: Optional[List[str]], files: Optional[List[str]
     return {"功能开发": 0.7}
 
 
-def _enrich_commit_description(cleaned: str, files: List[str], work_type: str) -> str:
-    """为单条 commit 生成描述，直接使用 commit 摘要，不附加技术栈/文件数。"""
-    return cleaned
-
-
-def _extract_detailed_work_items(activity: Optional[Dict[str, Any]], conversation_content: str = "") -> Dict[str, List[str]]:
+def _extract_detailed_work_items(activity: Optional[Dict[str, Any]]) -> Dict[str, List[str]]:
     """
     逐条 commit 处理，生成工作项。每条 commit 独立确定工作类型和描述，
     避免含 fix 的 commit 污染其他 commit 的分类。
@@ -583,10 +490,7 @@ def _extract_detailed_work_items(activity: Optional[Dict[str, Any]], conversatio
             work_types = {"功能开发": 0.7}
         work_type = max(work_types, key=work_types.get)
 
-        cleaned = _extract_summary_from_subject(subject)
-        desc = _enrich_commit_description(cleaned, files, work_type)
-
-        result.setdefault(work_type, []).append(desc)
+        result.setdefault(work_type, []).append(_extract_summary_from_subject(subject))
 
     return result
 
@@ -595,7 +499,6 @@ def _extract_detailed_work_items(activity: Optional[Dict[str, Any]], conversatio
 def _build_daily_report(date_str: str) -> str:
     cn_date = _format_cn_date(date_str)
     user = _get_user_info()
-    conversation_content = _collect_conversations(date_str) or ""
 
     activities = []
     for repo_name, repo_path in _find_git_repos():
@@ -606,7 +509,7 @@ def _build_daily_report(date_str: str) -> str:
     # 组装 projects 数据
     projects = []
     for i, activity in enumerate(activities, 1):
-        work_items = _extract_detailed_work_items(activity, conversation_content)
+        work_items = _extract_detailed_work_items(activity)
         projects.append({
             "index": str(i),
             "name": activity["display_name"],
@@ -885,19 +788,6 @@ def send_daily_report_email(report_path: str = None) -> str:
 
     return _send_report_email(report_path)
 
-
-@mcp.tool()
-def save_and_send(content: str, date: str = None) -> str:
-    """保存日报并立即发送邮件（一键保存+发送）"""
-    date_str = date or datetime.now().strftime("%Y-%m-%d")
-
-    reports_dir = _resolve_reports_dir()
-    report_path = os.path.join(reports_dir, f"{date_str}.md")
-
-    with open(report_path, "w", encoding="utf-8") as f:
-        f.write(content)
-
-    return f"日报已保存: {report_path}\n{_send_report_email(report_path)}"
 
 
 @mcp.tool()
