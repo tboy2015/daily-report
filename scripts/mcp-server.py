@@ -279,41 +279,78 @@ def _resolve_reports_dir() -> str:
 
 def _render_template(text: str, ctx: dict) -> str:
     """轻量模板渲染器，支持三种语法：
-    - {{var}}              简单变量替换
-    - {{#each list}}...{{/each}}   循环，每项可用 {{field}} 或 {{this}}（标量）
-    - {{^var}}...{{/var}}  当 var 为空/假时渲染（inverted section）
+    - {{var}}                      简单变量替换
+    - {{#each list}}...{{/each}}   循环（支持嵌套），每项可用 {{field}} 或 {{this}}
+    - {{^var}}...{{/var}}          当 var 为空/假时渲染
     """
-    # {{#each key}}...{{/each}}
-    each_re = re.compile(r'\{\{#each ([^}]+)\}\}(.*?)\{\{/each\}\}', re.DOTALL)
+    result = []
+    i = 0
+    n = len(text)
 
-    def expand_each(m):
-        key = m.group(1).strip()
-        block = m.group(2)
-        items = ctx.get(key) or []
-        parts = []
-        for item in items:
-            child_ctx = {**ctx, **(item if isinstance(item, dict) else {'this': str(item)})}
-            parts.append(_render_template(block, child_ctx))
-        return ''.join(parts)
+    while i < n:
+        j = text.find('{{', i)
+        if j == -1:
+            result.append(text[i:])
+            break
 
-    text = each_re.sub(expand_each, text)
+        result.append(text[i:j])
 
-    # {{^var}}...{{/var}}
-    inv_re = re.compile(r'\{\{\^([^}]+)\}\}(.*?)\{\{/\1\}\}', re.DOTALL)
+        k = text.find('}}', j + 2)
+        if k == -1:
+            result.append(text[j:])
+            break
 
-    def expand_inverted(m):
-        key = m.group(1).strip()
-        block = m.group(2)
-        return _render_template(block, ctx) if not ctx.get(key) else ''
+        tag = text[j + 2:k].strip()
+        i = k + 2
 
-    text = inv_re.sub(expand_inverted, text)
+        if tag.startswith('#each '):
+            key = tag[6:].strip()
+            # 用深度计数找到正确匹配的 {{/each}}，支持嵌套
+            depth = 1
+            p = i
+            block_end = -1
+            while p < n:
+                next_open = text.find('{{#each ', p)
+                next_close = text.find('{{/each}}', p)
+                if next_close == -1:
+                    break
+                if next_open != -1 and next_open < next_close:
+                    depth += 1
+                    p = next_open + 8
+                else:
+                    depth -= 1
+                    if depth == 0:
+                        block_end = next_close
+                        break
+                    p = next_close + 9
+            if block_end == -1:
+                continue
+            block = text[i:block_end]
+            items = ctx.get(key) or []
+            for item in items:
+                child_ctx = {**ctx, **(item if isinstance(item, dict) else {'this': str(item)})}
+                result.append(_render_template(block, child_ctx))
+            i = block_end + 9  # 跳过 {{/each}}
 
-    # {{var}}
-    def expand_var(m):
-        val = ctx.get(m.group(1).strip())
-        return str(val) if val is not None else m.group(0)
+        elif tag.startswith('^'):
+            key = tag[1:].strip()
+            close_tag = '{{/' + key + '}}'
+            end = text.find(close_tag, i)
+            if end == -1:
+                continue
+            block = text[i:end]
+            if not ctx.get(key):
+                result.append(_render_template(block, ctx))
+            i = end + len(close_tag)
 
-    return re.sub(r'\{\{([^#/\^][^}]*)\}\}', expand_var, text)
+        elif tag.startswith('/'):
+            pass  # 正常流程不应到达，跳过
+
+        else:
+            val = ctx.get(tag)
+            result.append(str(val) if val is not None else '{{' + tag + '}}')
+
+    return ''.join(result)
 
 
 def _format_cn_date(date_str: str) -> str:
