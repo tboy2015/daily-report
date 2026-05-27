@@ -183,20 +183,12 @@ allowed-tools: [
 
 ### 新机器初始化（首次使用必做）
 
-复制 `config.example.json` 到 `~/.claude/daily-report-config.json` 并填写个人信息，
-或者直接调用 MCP 工具完成配置：
-
+```bash
+cp config.example.json config.json
+# 编辑 config.json，填写姓名、公司、邮箱 SMTP 信息、代码目录路径
 ```
-# 配置用户信息和路径
-configure_profile(name="张三", company="XX公司", department="XX部门",
-                  phone="手机号", email="邮箱", work_dir="~/work/code",
-                  greeting="部门+姓名，用于日报开头")
 
-# 配置邮件
-configure_email(smtp_server="smtp.qq.com", smtp_user="xxx@qq.com",
-                smtp_password="授权码", from_email="xxx@qq.com",
-                to_emails=["recipient@company.com"])
-```
+`config.json` 已加入 `.gitignore`，不会被提交。
 
 ### 基本用法
 

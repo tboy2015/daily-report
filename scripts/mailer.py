@@ -14,7 +14,7 @@ from email.header import Header
 from email.utils import formatdate, make_msgid
 from datetime import datetime
 
-CONFIG_PATH = os.path.expanduser("~/.claude/daily-report-config.json")
+CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "config.json"))
 
 
 def load_config():

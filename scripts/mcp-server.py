@@ -24,7 +24,7 @@ from mailer import load_config, send_daily_report
 
 mcp = FastMCP("daily-report")
 
-CONFIG_PATH = os.path.expanduser("~/.claude/daily-report-config.json")
+CONFIG_PATH = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "config.json"))
 
 # 内置兜底项目名映射（用户可在配置文件的 project_name_map 中覆盖或扩展）
 _BUILTIN_PROJECT_NAME_MAP = {
@@ -285,7 +285,7 @@ def _resolve_reports_dir() -> str:
     Priority:
     1) Env var DAILY_REPORTS_DIR
     2) Config file paths.reports_dir
-    3) Fallback inside this skill workspace (../output/daily-reports)
+    3) Default: output/daily-reports inside the repo
     """
     env_dir = os.environ.get("DAILY_REPORTS_DIR")
     cfg_dir = _load_config().get("paths", {}).get("reports_dir", "")
@@ -958,49 +958,12 @@ def configure_email(
         "use_ssl": use_ssl,
     })
 
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
     return f"邮件配置已保存到: {CONFIG_PATH}"
 
 
-@mcp.tool()
-def configure_profile(
-    name: str,
-    company: str,
-    department: str,
-    phone: str,
-    email: str,
-    work_dir: str,
-    greeting: str = "",
-    projects_dir: str = "",
-    reports_dir: str = "",
-    project_name_map: dict = None,
-) -> str:
-    """配置用户信息和路径（换电脑时运行此工具完成初始化）"""
-    config = _load_config()
-    config["user"] = {
-        "name": name,
-        "greeting": greeting or name,
-        "company": company,
-        "department": department,
-        "phone": phone,
-        "email": email,
-    }
-    config["paths"] = {
-        "work_dir": work_dir,
-        "projects_dir": projects_dir or "~/.claude/projects",
-        "reports_dir": reports_dir or "~/Documents/daily-reports",
-    }
-    if project_name_map:
-        config["project_name_map"] = project_name_map
-
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
-
-    return f"用户配置已保存到: {CONFIG_PATH}"
 
 
 if __name__ == "__main__":

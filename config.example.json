@@ -1,32 +1,25 @@
 {
-  "_comment": "将此文件复制到 ~/.claude/daily-report-config.json 并填写个人信息",
+  "_setup": "复制此文件为 config.json，填写个人信息，即可在任意电脑使用",
 
   "user": {
     "name": "姓名",
-    "greeting": "部门简称+姓名，用于日报开头，例如：南网业务处唐标",
+    "greeting": "部门+姓名（用于日报开头，例如：南网业务处张三）",
     "company": "公司全称",
-    "department": "部门全称，例如：交通服务事业部 - 南网业务处",
+    "department": "部门全称",
     "phone": "联系电话",
     "email": "工作邮箱"
   },
 
   "paths": {
-    "work_dir": "~/work/your-code-dir",
-    "projects_dir": "~/.claude/projects",
-    "reports_dir": "~/Documents/daily-reports"
-  },
-
-  "project_name_map": {
-    "repo-name": "中文业务名称",
-    "another-repo": "另一个项目名称"
+    "work_dir": "~/work/your-code-dir"
   },
 
   "smtp_server": "smtp.example.com",
   "smtp_port": 587,
   "smtp_user": "your@email.com",
-  "smtp_password": "your-password",
+  "smtp_password": "your-smtp-password",
   "from_email": "your@email.com",
-  "to_emails": ["recipient@email.com"],
+  "to_emails": ["recipient@company.com"],
   "use_tls": true,
   "use_ssl": false
 }

@@ -1,0 +1,4 @@
+config.json
+scripts/__pycache__/
+output/daily-reports/*.md
+.DS_Store
