@@ -6,6 +6,7 @@ Daily Report MCP Server
 
 import json
 import os
+import re
 import subprocess
 import glob
 import sys
@@ -312,6 +313,45 @@ def _resolve_reports_dir() -> str:
     return cwd_fallback
 
 
+def _render_template(text: str, ctx: dict) -> str:
+    """轻量模板渲染器，支持三种语法：
+    - {{var}}              简单变量替换
+    - {{#each list}}...{{/each}}   循环，每项可用 {{field}} 或 {{this}}（标量）
+    - {{^var}}...{{/var}}  当 var 为空/假时渲染（inverted section）
+    """
+    # {{#each key}}...{{/each}}
+    each_re = re.compile(r'\{\{#each ([^}]+)\}\}(.*?)\{\{/each\}\}', re.DOTALL)
+
+    def expand_each(m):
+        key = m.group(1).strip()
+        block = m.group(2)
+        items = ctx.get(key) or []
+        parts = []
+        for item in items:
+            child_ctx = {**ctx, **(item if isinstance(item, dict) else {'this': str(item)})}
+            parts.append(_render_template(block, child_ctx))
+        return ''.join(parts)
+
+    text = each_re.sub(expand_each, text)
+
+    # {{^var}}...{{/var}}
+    inv_re = re.compile(r'\{\{\^([^}]+)\}\}(.*?)\{\{/\1\}\}', re.DOTALL)
+
+    def expand_inverted(m):
+        key = m.group(1).strip()
+        block = m.group(2)
+        return _render_template(block, ctx) if not ctx.get(key) else ''
+
+    text = inv_re.sub(expand_inverted, text)
+
+    # {{var}}
+    def expand_var(m):
+        val = ctx.get(m.group(1).strip())
+        return str(val) if val is not None else m.group(0)
+
+    return re.sub(r'\{\{([^#/\^][^}]*)\}\}', expand_var, text)
+
+
 def _format_cn_date(date_str: str) -> str:
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     return dt.strftime("%Y年%m月%d日")
@@ -552,57 +592,9 @@ def _extract_detailed_work_items(activity: Optional[Dict[str, Any]], conversatio
 
 
 
-def _summarize_activity(activity):
-    """向后兼容的旧函数 - 用于字符串输出"""
-    subjects = activity["subjects"]
-    files = activity["files"]
-    file_text = "\n".join(files)
-    subject_text = "；".join(subjects)
-    bullets = []
-
-    batch_download = _contains_any(
-        subjects + files,
-        ["批量下载", "batchdownload", "download", "FileBatchDownload", "downloadApply"],
-    )
-    if batch_download:
-        bullets.append(("功能开发", "完成组件文档批量下载功能核心开发，贯通文件下载申请、文档记录和业务页面调用链路"))
-    elif subjects:
-        cleaned = "；".join(s.replace("feat:", "").replace("fix:", "").strip() for s in subjects[:3])
-        bullets.append(("功能开发", f"完成{cleaned}相关开发，推进项目功能完善"))
-
-    frontend_markers = (".tsx", ".jsx", ".vue", "src/apis/", "src/pages/", "src/components/", "src/views/")
-    if any(marker in file_text for marker in frontend_markers):
-        bullets.append(("前端开发", "更新前端 API、页面组件和交互逻辑，完善业务页面对下载功能的调用和反馈"))
-
-    backend_markers = ("src/main/java", "Controller", "Service", "Mapper", "DTO", "Entity", "ExceptionHandler")
-    if any(marker in file_text for marker in backend_markers):
-        bullets.append(("后端开发", "新增和调整后端接口、数据传输对象及异常处理逻辑，支撑文件批量下载服务能力"))
-
-    config_markers = ("package.json", "vite.config", "pom.xml", "application.yml", "yarn.lock", "Dockerfile", "nginx.conf")
-    if any(marker in file_text for marker in config_markers):
-        bullets.append(("配置更新", "同步前后端依赖、构建配置和运行参数，保障功能开发后的编译与部署一致性"))
-
-    init_markers = ("init", "初始化")
-    if _contains_any(subjects, init_markers):
-        bullets.append(("项目维护", "完成项目基础代码和资源文件初始化，为后续模块开发提供基础工程结构"))
-
-    if not bullets:
-        bullets.append(("项目推进", "根据当日提交记录完成项目相关代码调整和功能完善"))
-
-    deduped = []
-    seen = set()
-    for category, description in bullets:
-        if category not in seen:
-            seen.add(category)
-            deduped.append((category, description))
-    return deduped[:5]
-
-
-def _build_daily_report(date_str: str):
+def _build_daily_report(date_str: str) -> str:
     cn_date = _format_cn_date(date_str)
     user = _get_user_info()
-
-    # 采集当天的对话内容
     conversation_content = _collect_conversations(date_str) or ""
 
     activities = []
@@ -611,89 +603,77 @@ def _build_daily_report(date_str: str):
         if activity:
             activities.append(activity)
 
-    greeting = user["greeting"] or user["name"]
-    lines = [
-        "各位领导：",
-        "",
-        f"以下为{greeting}{cn_date}工作日报，烦请领导查收指正。",
-        "",
-        "-----------------------------------",
-        "",
-        f"一、日报日期：{cn_date}",
-        "",
-        "二、今日工作内容：",
-        "",
-    ]
+    # 组装 projects 数据
+    projects = []
+    for i, activity in enumerate(activities, 1):
+        work_items = _extract_detailed_work_items(activity, conversation_content)
+        projects.append({
+            "index": str(i),
+            "name": activity["display_name"],
+            "categories": [
+                {"category": cat, "items": items}
+                for cat, items in work_items.items()
+            ],
+        })
 
-    if activities:
-        for index, activity in enumerate(activities, 1):
-            lines.append(f"{index}、项目名称：{activity['display_name']}")
-            work_items = _extract_detailed_work_items(activity, conversation_content)
-            for category, items in work_items.items():
-                lines.append(f"· {category}：")
-                for item in items:
-                    # 如果 item 包含换行符，按行输出
-                    if "\n" in item:
-                        for line in item.split("\n"):
-                            lines.append(f"  {line}")
-                    else:
-                        lines.append(f"  {item}")
-            lines.append("")
-    else:
-        lines.append("当日无记录")
-        lines.append("")
+    # 组装 plans 数据
+    plans = (
+        [
+            {"plan": "开展当日开发功能的单元测试、联调测试和回归验证"},
+            {"plan": "验证前后端交互逻辑、异常处理和部署配置的正确性"},
+            {"plan": "根据测试反馈修复问题，优化用户交互体验和性能表现"},
+            {"plan": "完成代码审查，补充必要的接口说明和交付文档"},
+        ]
+        if activities
+        else [{"plan": "暂无"}]
+    )
 
-    lines.extend([
-        "三、明日（下周）工作计划：",
-    ])
-    if activities:
-        lines.extend([
-            "· 开展当日开发功能的单元测试、联调测试和回归验证",
-            "· 验证前后端交互逻辑、异常处理和部署配置的正确性",
-            "· 根据测试反馈修复问题，优化用户交互体验和性能表现",
-            "· 完成代码审查，补充必要的接口说明和交付文档",
-        ])
-    else:
-        lines.append("· 暂无")
-
+    # 组装 milestones 数据
     primary = activities[0] if activities else None
-    project = primary["display_name"] if primary else "暂无"
-    module = "组件文档模块" if primary and primary["display_name"] == "成就中心" else "核心业务模块"
-
-    # 已完成：直接从 commit 摘要提取，简洁清晰
     if primary:
+        module = "组件文档模块" if primary["display_name"] == "成就中心" else "核心业务模块"
         cleaned = [_extract_summary_from_subject(s) for s in primary["subjects"][:3] if s]
         completed = "、".join(cleaned) if cleaned else "项目功能开发"
         if len(completed) > 80:
             completed = completed[:80] + "..."
+        milestones = [{
+            "project": primary["display_name"],
+            "module": module,
+            "stage": "开发阶段",
+            "percent": "50",
+            "completed": completed,
+            "next_step": "功能测试、Bug 修复、代码审查和用户反馈优化",
+            "risk": "跨模块文件操作的性能、稳定性和部署环境差异需进一步验证",
+        }]
     else:
-        completed = "当日无记录"
+        milestones = [{
+            "project": "暂无",
+            "module": "—",
+            "stage": "—",
+            "percent": "—",
+            "completed": "当日无记录",
+            "next_step": "暂无",
+            "risk": "暂无",
+        }]
 
-    next_step = "功能测试、Bug 修复、代码审查和用户反馈优化" if primary else "暂无"
-    risk = "跨模块文件操作的性能、稳定性和部署环境差异需进一步验证" if primary else "暂无"
+    ctx = {
+        "日期": cn_date,
+        "greeting": user["greeting"] or user["name"],
+        "name": user["name"],
+        "company": user["company"],
+        "department": user["department"],
+        "phone": user["phone"],
+        "email": user["email"],
+        "projects": projects,
+        "plans": plans,
+        "milestones": milestones,
+    }
 
-    footer_lines = ["", "-----------------------------------"]
-    if user["company"]:
-        footer_lines.append(user["company"])
-    if user["department"]:
-        footer_lines.append(user["department"])
-    if user["name"]:
-        footer_lines.append(user["name"])
-    if user["phone"]:
-        footer_lines.append(f"Tel: {user['phone']}")
-    if user["email"]:
-        footer_lines.append(f"E-mail: {user['email']}")
-    footer_lines.extend([cn_date, ""])
+    template_path = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "templates", "report-template.md"))
+    with open(template_path, "r", encoding="utf-8") as f:
+        template = f.read()
 
-    lines.extend([
-        "",
-        "四、重点项目里程碑情况：",
-        f"· {project} - {module}：开发阶段（50%）" if primary else "· 暂无",
-        f"· 已完成：{completed}",
-        f"· 下一步：{next_step}",
-        f"· 风险点：{risk}",
-    ] + footer_lines)
-    return "\n".join(lines)
+    return _render_template(template, ctx)
 
 
 def _collect_git(date_str: str) -> str:

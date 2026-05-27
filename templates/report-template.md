@@ -18,7 +18,9 @@
 {{/each}}
 
 {{/each}}
+{{^projects}}当日无记录
 
+{{/projects}}
 三、明日（下周）工作计划：
 {{#each plans}}
 · {{plan}}
