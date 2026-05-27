@@ -42,7 +42,8 @@ def send_daily_report(report_path, config):
     msg = MIMEText(content, "plain", "utf-8")
     msg["From"] = config["from_email"]
     msg["To"] = ", ".join(config["to_emails"])
-    msg["Subject"] = Header(f"唐标 {today} 工作日报", "utf-8")
+    name = config.get("user", {}).get("name") or "日报"
+    msg["Subject"] = Header(f"{name} {today} 工作日报", "utf-8")
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid()
 

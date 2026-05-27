@@ -19,14 +19,14 @@ allowed-tools: [
 ### 1. 数据收集范围
 
 - 仅处理当天（00:00 - 23:59）的数据
-- 扫描 `/Users/tboy/work/codework/lc` 下的所有 git 仓库
-- 扫描 `~/.claude/projects/` 下的当天对话记录
+- 扫描配置文件 `paths.work_dir` 下的所有 git 仓库（默认 `~/work`）
+- 扫描配置文件 `paths.projects_dir` 下的当天对话记录（默认 `~/.claude/projects`）
 
 ### 2. 模板严格约束
 
 **必须严格按照用户指定模板输出，禁止任何格式改动。**
 
-模板文件位置：`~/.claude/skills/daily-report/templates/report-template.md`
+模板文件位置：`templates/report-template.md`（相对于 skill 目录）
 
 ### 3. 默认输出方式
 
@@ -48,7 +48,7 @@ allowed-tools: [
 1. 默认只调用 `generate_daily_report(date, send_email=true)`：一键生成、保存、发送并返回日报正文
 2. 只有用户明确要求排查数据源时，才调用 `get_email_config` 或其他诊断工具
 
-不要使用 Bash 手写扫描命令。MCP 工具内部会递归扫描 `/Users/tboy/work/codework/lc` 下所有 git 仓库，并读取 `~/.claude/projects/` 下当天对话记录。
+不要使用 Bash 手写扫描命令。MCP 工具内部会递归扫描配置文件指定的工作目录下所有 git 仓库，并读取配置文件指定的 projects 目录下当天对话记录。
 
 ### Step 2: 识别有效工作内容
 
@@ -181,6 +181,23 @@ allowed-tools: [
 
 ## 使用方式
 
+### 新机器初始化（首次使用必做）
+
+复制 `config.example.json` 到 `~/.claude/daily-report-config.json` 并填写个人信息，
+或者直接调用 MCP 工具完成配置：
+
+```
+# 配置用户信息和路径
+configure_profile(name="张三", company="XX公司", department="XX部门",
+                  phone="手机号", email="邮箱", work_dir="~/work/code",
+                  greeting="部门+姓名，用于日报开头")
+
+# 配置邮件
+configure_email(smtp_server="smtp.qq.com", smtp_user="xxx@qq.com",
+                smtp_password="授权码", from_email="xxx@qq.com",
+                to_emails=["recipient@company.com"])
+```
+
 ### 基本用法
 
 ```
@@ -213,8 +230,8 @@ allowed-tools: [
 
 ```
 1. 确定日期范围（当天 00:00 - 23:59）
-2. 扫描 /Users/tboy/work/codework/lc 下所有 git 仓库当天提交
-3. 扫描 ~/.claude/projects/ 下当天对话记录
+2. 扫描 config.paths.work_dir 下所有 git 仓库当天提交
+3. 扫描 config.paths.projects_dir 下当天对话记录
 4. 按项目分组，按工作类型分类归纳
 5. 推导明日工作计划（统一列表）
 6. 推导重点项目里程碑（统一列表）

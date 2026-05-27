@@ -24,12 +24,10 @@ from mailer import load_config, send_daily_report
 
 mcp = FastMCP("daily-report")
 
-WORK_DIR = "/Users/tboy/work/codework/lc"
-PROJECTS_DIR = "/Users/tboy/.claude/projects"
-REPORTS_DIR = "/Users/tboy/Documents/daily-reports"
-CONFIG_PATH = "/Users/tboy/.claude/daily-report-config.json"
+CONFIG_PATH = os.path.expanduser("~/.claude/daily-report-config.json")
 
-PROJECT_NAME_MAP = {
+# 内置兜底项目名映射（用户可在配置文件的 project_name_map 中覆盖或扩展）
+_BUILTIN_PROJECT_NAME_MAP = {
     "anbp": "研发平台-成果中心",
     "ANBP": "研发平台-成果中心",
     "achievement-center-console-dev": "研发平台-成果中心",
@@ -44,6 +42,53 @@ PROJECT_NAME_MAP = {
     "dm-mcp-server": "达梦 MCP 工具",
     "mysql2dm-spring-boot-starter": "MySQL 转达梦适配组件",
 }
+
+
+def _load_config() -> dict:
+    """加载配置文件，返回合并后的配置字典。"""
+    if not os.path.exists(CONFIG_PATH):
+        return {}
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _get_work_dir() -> str:
+    cfg = _load_config()
+    raw = cfg.get("paths", {}).get("work_dir") or os.environ.get("DAILY_WORK_DIR", "")
+    return os.path.expanduser(raw) if raw else os.path.expanduser("~/work")
+
+
+def _get_projects_dir() -> str:
+    cfg = _load_config()
+    raw = cfg.get("paths", {}).get("projects_dir") or ""
+    return os.path.expanduser(raw) if raw else os.path.expanduser("~/.claude/projects")
+
+
+def _get_user_info() -> dict:
+    cfg = _load_config()
+    u = cfg.get("user", {})
+    return {
+        "name": u.get("name", "日报"),
+        "greeting": u.get("greeting") or u.get("name", ""),
+        "company": u.get("company", ""),
+        "department": u.get("department", ""),
+        "phone": u.get("phone", ""),
+        "email": u.get("email", ""),
+    }
+
+
+def _get_project_name_map() -> dict:
+    cfg = _load_config()
+    merged = dict(_BUILTIN_PROJECT_NAME_MAP)
+    merged.update(cfg.get("project_name_map", {}))
+    return merged
+
+
+# 向后兼容：保留模块级变量供旧代码引用
+PROJECT_NAME_MAP = _get_project_name_map()
 
 # 全局配置：技术栈标记定义
 TECH_STACK_MARKERS = {
@@ -105,17 +150,25 @@ def _display_project_name(name: str) -> str:
         return "未命名项目"
 
     normalized = name.strip()
-    if normalized.startswith("-Users-tboy-work-codework-lc-"):
-        normalized = normalized.replace("-Users-tboy-work-codework-lc-", "", 1)
 
-    if normalized in PROJECT_NAME_MAP:
-        return PROJECT_NAME_MAP[normalized]
+    # 剥离工作目录前缀（路径转连字符形式）
+    work_dir = _get_work_dir()
+    work_prefix = work_dir.lstrip("/").replace("/", "-")
+    if normalized.startswith("-" + work_prefix + "-"):
+        normalized = normalized[len(work_prefix) + 2:]
+    elif normalized.startswith(work_prefix + "-"):
+        normalized = normalized[len(work_prefix) + 1:]
+
+    pmap = _get_project_name_map()
+
+    if normalized in pmap:
+        return pmap[normalized]
 
     lower = normalized.lower()
-    if lower in PROJECT_NAME_MAP:
-        return PROJECT_NAME_MAP[lower]
+    if lower in pmap:
+        return pmap[lower]
 
-    for key, value in PROJECT_NAME_MAP.items():
+    for key, value in pmap.items():
         if key.lower() in lower:
             return value
 
@@ -179,8 +232,10 @@ def _is_effective_user_message(text: str) -> bool:
     return not any(fragment in stripped for fragment in ignored_fragments)
 
 
-def _find_git_repos(root_dir: str):
+def _find_git_repos(root_dir: str = None):
     """递归发现工作目录下的 git 仓库。"""
+    if root_dir is None:
+        root_dir = _get_work_dir()
     repos = []
     if not os.path.exists(root_dir):
         return repos
@@ -229,14 +284,16 @@ def _resolve_reports_dir() -> str:
 
     Priority:
     1) Env var DAILY_REPORTS_DIR
-    2) Default REPORTS_DIR (/Users/tboy/Documents/daily-reports)
+    2) Config file paths.reports_dir
     3) Fallback inside this skill workspace (../output/daily-reports)
     """
     env_dir = os.environ.get("DAILY_REPORTS_DIR")
+    cfg_dir = _load_config().get("paths", {}).get("reports_dir", "")
     candidates = []
     if env_dir:
         candidates.append(env_dir)
-    candidates.append(REPORTS_DIR)
+    if cfg_dir:
+        candidates.append(os.path.expanduser(cfg_dir))
     candidates.append(os.path.abspath(os.path.join(SCRIPT_DIR, "..", "output", "daily-reports")))
 
     for candidate in candidates:
@@ -263,41 +320,54 @@ def _format_cn_date(date_str: str) -> str:
 def _repo_activity(repo_name: str, repo_path: str, date_str: str):
     since = f"{date_str} 00:00"
     until = f"{date_str} 23:59"
-    commits = _run_git_command(
+
+    # 使用 COMMIT: 分隔符，同时输出 commit 信息和对应文件列表
+    raw = _run_git_command(
         repo_path,
         [
             "git",
             "log",
             f"--since={since}",
             f"--until={until}",
-            "--format=%H|%s|%ad",
-            "--date=short",
+            "--format=COMMIT:%H|%s",
+            "--name-only",
             "-n",
             "50",
         ],
     )
-    if not commits or commits.startswith("ERROR"):
+    if not raw or raw.startswith("ERROR"):
         return None
 
-    files = _run_git_command(
-        repo_path,
-        [
-            "git",
-            "log",
-            f"--since={since}",
-            f"--until={until}",
-            "--name-only",
-            "--format=",
-        ],
-    )
-    changed_files = sorted({line.strip() for line in files.splitlines() if line.strip()})
-    subjects = [line.split("|", 2)[1] for line in commits.splitlines() if "|" in line]
+    # 解析每条 commit 的独立文件列表
+    commit_blocks: List[Dict] = []
+    current: Optional[Dict] = None
+    for line in raw.splitlines():
+        if line.startswith("COMMIT:"):
+            if current is not None:
+                commit_blocks.append(current)
+            parts = line[7:].split("|", 1)
+            current = {
+                "hash": parts[0],
+                "subject": parts[1] if len(parts) > 1 else "",
+                "files": [],
+            }
+        elif line.strip() and current is not None:
+            current["files"].append(line.strip())
+    if current is not None:
+        commit_blocks.append(current)
+
+    if not commit_blocks:
+        return None
+
+    all_files = sorted({f for c in commit_blocks for f in c["files"]})
+    subjects = [c["subject"] for c in commit_blocks]
     return {
         "repo": repo_name,
         "path": repo_path,
         "display_name": _display_project_name(repo_name),
         "subjects": subjects,
-        "files": changed_files,
+        "files": all_files,
+        "commit_blocks": commit_blocks,  # 每条 commit 含独立文件列表
     }
 
 
@@ -351,149 +421,135 @@ def _estimate_code_volume(files: Optional[List[str]]) -> str:
 
 
 def _extract_summary_from_subject(subject: Optional[str]) -> str:
-    """从 commit message 提取概括"""
-    # 输入验证：检查subject是否为None或非字符串
+    """从 commit message 提取概括，去除 conventional commit 前缀（含 scope）"""
+    import re
     if not subject or not isinstance(subject, str):
         return "完成代码调整"
-
-    cleaned = subject.replace("feat:", "").replace("fix:", "").strip()
-    if len(cleaned) > 40:
-        cleaned = cleaned[:40] + "..."
+    # 剥离 feat:、fix:、feat(scope):、fix(scope):、feat(scope)!: 等前缀
+    cleaned = re.sub(
+        r'^(feat|fix|chore|docs|style|refactor|perf|test|build|ci|revert)(\([^)]*\))?!?:\s*',
+        '',
+        subject.strip()
+    )
+    cleaned = cleaned.strip() or subject.strip()
+    if len(cleaned) > 50:
+        cleaned = cleaned[:50] + "..."
     return cleaned
 
 
 def _identify_work_type(subjects: Optional[List[str]], files: Optional[List[str]]) -> Dict[str, float]:
-    """识别工作类型并返回优先级"""
-    # 输入验证
+    """识别工作类型并返回优先级。
+
+    分类互斥原则：
+    - 有明确前端/后端文件时，直接归为前端/后端，不再叠加"功能开发"
+    - "配置更新"/"文档整理"仅在没有代码文件时单独出现，否则忽略
+    - "问题修复"直接返回，不与其他类型叠加
+    - "功能开发"为兜底分类，当无法判断前/后端时使用
+    """
     if not subjects or not isinstance(subjects, (list, tuple)):
         subjects = []
     if not files or not isinstance(files, (list, tuple)):
         files = []
 
     try:
-        # 确保所有元素都是字符串
         file_text = "\n".join(str(f) for f in files).lower()
         subject_text = "\n".join(str(s) for s in subjects).lower()
     except Exception:
         return {}
 
-    work_types: Dict[str, float] = {}
+    # 问题修复优先：直接返回，不与其他类型叠加
+    if any(kw in subject_text for kw in ["fix", "bug", "修复", "bugfix"]):
+        return {"问题修复": 1.0}
 
-    # 功能开发
-    if any(kw in subject_text for kw in WORK_TYPE_KEYWORDS.get("功能开发", [])) or \
-       any(marker in file_text for marker in WORK_TYPE_MARKERS.get("功能开发", [])):
-        work_types["功能开发"] = 1.0
+    has_java = "src/main/java" in file_text or any(
+        str(f).endswith(".java") for f in files if isinstance(f, str)
+    )
+    has_frontend = any(m in file_text for m in [
+        ".vue", ".tsx", ".jsx",
+        "src/views/", "src/components/", "src/pages/",
+    ])
 
-    # 前端开发
-    if any(kw in subject_text for kw in WORK_TYPE_KEYWORDS.get("前端开发", [])) or \
-       any(marker in file_text for marker in WORK_TYPE_MARKERS.get("前端开发", [])):
-        work_types["前端开发"] = 0.9
+    # 有代码文件（java 或 前端）时，归为前端/后端，不叠加配置/文档
+    if has_java and has_frontend:
+        return {"前端开发": 0.9, "后端开发": 0.8}
+    if has_frontend:
+        return {"前端开发": 0.9}
+    if has_java:
+        return {"后端开发": 0.8}
 
-    # 后端开发
-    if any(marker in file_text for marker in WORK_TYPE_MARKERS.get("后端开发", [])):
-        work_types["后端开发"] = 0.8
+    # 无明确代码文件时：先按文件类型判断（配置/文档），再按 commit message 兜底
+    config_markers = ["pom.xml", "package.json", "application.yml", "application.properties", "docker-compose"]
+    code_files = [f for f in files if isinstance(f, str)
+                  and not f.endswith(".md")
+                  and not any(m in f for m in config_markers)]
 
-    # 问题修复
-    if any(kw in subject_text for kw in WORK_TYPE_KEYWORDS.get("问题修复", [])):
-        work_types["问题修复"] = 1.0
+    if not code_files:
+        if any(m in file_text for m in config_markers):
+            return {"配置更新": 0.7}
+        doc_files = [f for f in files if isinstance(f, str) and f.endswith(".md")]
+        if doc_files:
+            return {"文档整理": 0.5}
 
-    # 配置更新
-    if any(kw in subject_text for kw in WORK_TYPE_KEYWORDS.get("配置更新", [])) or \
-       any(marker in file_text for marker in WORK_TYPE_MARKERS.get("配置更新", [])):
-        work_types["配置更新"] = 0.7
+    # 从 commit message 推断（有代码文件但不是 java/vue 的情况）
+    if any(kw in subject_text for kw in ["页面", "组件", "ui", "frontend", "前端"]):
+        return {"前端开发": 0.9}
+    if any(kw in subject_text for kw in ["接口", "服务", "后端", "service", "backend"]):
+        return {"后端开发": 0.8}
 
-    # 文档整理
-    if any(marker in file_text for marker in WORK_TYPE_MARKERS.get("文档整理", [])):
-        work_types["文档整理"] = 0.6
+    # 兜底：通用功能开发
+    return {"功能开发": 0.7}
 
-    return work_types
+
+def _enrich_commit_description(cleaned: str, files: List[str], work_type: str) -> str:
+    """为单条 commit 生成描述，直接使用 commit 摘要，不附加技术栈/文件数。"""
+    return cleaned
 
 
 def _extract_detailed_work_items(activity: Optional[Dict[str, Any]], conversation_content: str = "") -> Dict[str, List[str]]:
     """
-    从 activity（git 数据）和对话内容提取详细的工作项。
+    逐条 commit 处理，生成工作项。每条 commit 独立确定工作类型和描述，
+    避免含 fix 的 commit 污染其他 commit 的分类。
 
-    输入：
-    - activity: {"subjects": [...], "files": [...]} 或 None
-    - conversation_content: 对话内容文本
-
-    输出：
-    {
-        "功能开发": [
-            "项目1概括（5-6行详细描述）",
-            "项目2概括",
-            ...
-        ],
-        "前端开发": [...],
-        ...
-    }
+    输出：{ "前端开发": ["描述1", "描述2"], "后端开发": [...], ... }
     """
-    # 输入验证：检查activity是否为None或无效
     if not activity or not isinstance(activity, dict):
         return {}
 
-    subjects = activity.get("subjects", [])
-    files = activity.get("files", [])
+    commit_blocks = activity.get("commit_blocks")
 
-    # 确保subjects和files是列表
-    if not isinstance(subjects, (list, tuple)):
-        subjects = []
-    if not isinstance(files, (list, tuple)):
-        files = []
+    # 向后兼容：无 commit_blocks 时降级处理
+    if not commit_blocks:
+        subjects = activity.get("subjects", [])
+        files = activity.get("files", [])
+        if not isinstance(subjects, (list, tuple)):
+            subjects = []
+        if not isinstance(files, (list, tuple)):
+            files = []
+        commit_blocks = [{"hash": "", "subject": s, "files": files} for s in subjects]
 
     result: Dict[str, List[str]] = {}
-    work_types = _identify_work_type(subjects, files)
 
-    if not work_types:
-        # 没有识别到任何类型，使用默认类型
-        work_types = {"项目推进": 1.0}
+    for commit in commit_blocks:
+        subject = commit.get("subject", "")
+        files = commit.get("files", [])
+        if not isinstance(files, (list, tuple)):
+            files = []
+        if not subject:
+            continue
 
-    # 按优先级排序
-    sorted_types = sorted(work_types.items(), key=lambda x: -x[1])
+        # 针对单条 commit 独立判断工作类型，避免 fix 提交影响其他提交的分类
+        work_types = _identify_work_type([subject], files)
+        if not work_types:
+            work_types = {"功能开发": 0.7}
+        work_type = max(work_types, key=work_types.get)
 
-    for work_type, priority in sorted_types:
-        items: List[str] = []
+        cleaned = _extract_summary_from_subject(subject)
+        desc = _enrich_commit_description(cleaned, files, work_type)
 
-        if work_type in ("功能开发", "前端开发"):
-            # 详细描述格式：概括 + 实现方式 + 技术栈 + 核心逻辑 + 代码量
-            first_subject = subjects[0] if subjects else None
-            summary = _extract_summary_from_subject(first_subject)
-
-            # 技术栈
-            tech_stack = _infer_tech_stack(files)
-            tech_text = "、".join(tech_stack) if tech_stack else "多技术栈"
-
-            # 核心逻辑 - 从对话内容提取关键词
-            logic_keywords = []
-            if conversation_content:
-                for kw in CORE_LOGIC_KEYWORDS:
-                    if kw.lower() in conversation_content.lower():
-                        logic_keywords.append(kw)
-            logic_text = "、".join(logic_keywords[:3]) if logic_keywords else "业务逻辑"
-
-            # 代码量
-            code_volume = _estimate_code_volume(files)
-
-            # 组装详细项
-            item_lines = [
-                f"概括：{summary}",
-                f"实现方式：设计并实现{work_type.replace('开发', '')}功能模块",
-                f"核心逻辑：{logic_text}处理"
-            ]
-            items.append("\n".join(item_lines))
-
-        else:
-            # 其他分类：简洁描述（1-3行）
-            if subjects:
-                summary = "；".join([_extract_summary_from_subject(s) for s in subjects[:2]])
-            else:
-                summary = "完成相关代码调整"
-            items.append(summary)
-
-        if items:
-            result[work_type] = items
+        result.setdefault(work_type, []).append(desc)
 
     return result
+
 
 
 def _summarize_activity(activity):
@@ -544,20 +600,22 @@ def _summarize_activity(activity):
 
 def _build_daily_report(date_str: str):
     cn_date = _format_cn_date(date_str)
+    user = _get_user_info()
 
     # 采集当天的对话内容
     conversation_content = _collect_conversations(date_str) or ""
 
     activities = []
-    for repo_name, repo_path in _find_git_repos(WORK_DIR):
+    for repo_name, repo_path in _find_git_repos():
         activity = _repo_activity(repo_name, repo_path, date_str)
         if activity:
             activities.append(activity)
 
+    greeting = user["greeting"] or user["name"]
     lines = [
         "各位领导：",
         "",
-        f"以下为南网业务处唐标{cn_date}工作日报，烦请领导查收指正。",
+        f"以下为{greeting}{cn_date}工作日报，烦请领导查收指正。",
         "",
         "-----------------------------------",
         "",
@@ -602,22 +660,30 @@ def _build_daily_report(date_str: str):
     project = primary["display_name"] if primary else "暂无"
     module = "组件文档模块" if primary and primary["display_name"] == "成就中心" else "核心业务模块"
 
-    # 从新的详细项中提取已完成项
+    # 已完成：直接从 commit 摘要提取，简洁清晰
     if primary:
-        work_items = _extract_detailed_work_items(primary, conversation_content)
-        completed_items = []
-        for category, items in work_items.items():
-            if items:
-                first_item = items[0]
-                if "\n" in first_item:
-                    first_item = first_item.split("\n")[0]
-                completed_items.append(f"{category}：{first_item[:30]}")
-        completed = "、".join(completed_items[:2]) if completed_items else "项目功能开发"
+        cleaned = [_extract_summary_from_subject(s) for s in primary["subjects"][:3] if s]
+        completed = "、".join(cleaned) if cleaned else "项目功能开发"
+        if len(completed) > 80:
+            completed = completed[:80] + "..."
     else:
         completed = "当日无记录"
 
     next_step = "功能测试、Bug 修复、代码审查和用户反馈优化" if primary else "暂无"
     risk = "跨模块文件操作的性能、稳定性和部署环境差异需进一步验证" if primary else "暂无"
+
+    footer_lines = ["", "-----------------------------------"]
+    if user["company"]:
+        footer_lines.append(user["company"])
+    if user["department"]:
+        footer_lines.append(user["department"])
+    if user["name"]:
+        footer_lines.append(user["name"])
+    if user["phone"]:
+        footer_lines.append(f"Tel: {user['phone']}")
+    if user["email"]:
+        footer_lines.append(f"E-mail: {user['email']}")
+    footer_lines.extend([cn_date, ""])
 
     lines.extend([
         "",
@@ -626,16 +692,7 @@ def _build_daily_report(date_str: str):
         f"· 已完成：{completed}",
         f"· 下一步：{next_step}",
         f"· 风险点：{risk}",
-        "",
-        "-----------------------------------",
-        "山东浪潮数字服务有限公司",
-        "交通服务事业部 - 南网业务处",
-        "唐标",
-        "Tel: 13707490673",
-        "E-mail: tangbiao@inspur.com",
-        cn_date,
-        "",
-    ])
+    ] + footer_lines)
     return "\n".join(lines)
 
 
@@ -644,7 +701,7 @@ def _collect_git(date_str: str) -> str:
     since = f"{date_str} 00:00"
     until = f"{date_str} 23:59"
 
-    repos = _find_git_repos(WORK_DIR)
+    repos = _find_git_repos()
 
     results = []
     for repo_name, repo_path in repos:
@@ -716,14 +773,15 @@ def _collect_git(date_str: str) -> str:
 def _collect_conversations(date_str: str) -> str:
     """内部：收集对话记录"""
     target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    projects_dir = _get_projects_dir()
 
     results = []
-    if os.path.exists(PROJECTS_DIR):
-        for project_dir in glob.glob(f"{PROJECTS_DIR}/*"):
+    if os.path.exists(projects_dir):
+        for project_dir in glob.glob(f"{projects_dir}/*"):
             if not os.path.isdir(project_dir):
                 continue
             project_name = os.path.basename(project_dir)
-            jsonl_files = glob.glob(f"{project_dir}/*.jsonl")
+            jsonl_files = glob.glob(os.path.join(project_dir, "*.jsonl"))
             for jf in jsonl_files:
                 try:
                     mtime = datetime.fromtimestamp(os.path.getmtime(jf)).date()
@@ -887,8 +945,9 @@ def configure_email(
     use_tls: bool = True,
     use_ssl: bool = False
 ) -> str:
-    """配置邮件发送参数"""
-    config = {
+    """配置邮件发送参数（保留已有的用户信息和路径配置）"""
+    config = _load_config()
+    config.update({
         "smtp_server": smtp_server,
         "smtp_port": smtp_port,
         "smtp_user": smtp_user,
@@ -897,12 +956,51 @@ def configure_email(
         "to_emails": to_emails,
         "use_tls": use_tls,
         "use_ssl": use_ssl,
-    }
+    })
 
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
     return f"邮件配置已保存到: {CONFIG_PATH}"
+
+
+@mcp.tool()
+def configure_profile(
+    name: str,
+    company: str,
+    department: str,
+    phone: str,
+    email: str,
+    work_dir: str,
+    greeting: str = "",
+    projects_dir: str = "",
+    reports_dir: str = "",
+    project_name_map: dict = None,
+) -> str:
+    """配置用户信息和路径（换电脑时运行此工具完成初始化）"""
+    config = _load_config()
+    config["user"] = {
+        "name": name,
+        "greeting": greeting or name,
+        "company": company,
+        "department": department,
+        "phone": phone,
+        "email": email,
+    }
+    config["paths"] = {
+        "work_dir": work_dir,
+        "projects_dir": projects_dir or "~/.claude/projects",
+        "reports_dir": reports_dir or "~/Documents/daily-reports",
+    }
+    if project_name_map:
+        config["project_name_map"] = project_name_map
+
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
+
+    return f"用户配置已保存到: {CONFIG_PATH}"
 
 
 if __name__ == "__main__":
