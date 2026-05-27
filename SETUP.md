@@ -80,6 +80,22 @@ cp config.example.json config.json
 }
 ```
 
+**自定义日报默认文案**（可选）：
+
+```json
+"defaults": {
+  "plans": [
+    "开展当日开发功能的单元测试、联调测试和回归验证",
+    "根据测试反馈修复问题，优化用户交互体验"
+  ],
+  "milestone_module": "核心业务模块",
+  "milestone_stage": "开发阶段",
+  "milestone_percent": "50",
+  "milestone_next_step": "功能测试、Bug 修复、代码审查",
+  "milestone_risk": "需进一步验证稳定性和部署环境差异"
+}
+```
+
 ---
 
 ## 步骤四：注册 MCP 服务

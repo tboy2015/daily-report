@@ -14,6 +14,20 @@
     "work_dir": "~/work/your-code-dir"
   },
 
+  "defaults": {
+    "plans": [
+      "开展当日开发功能的单元测试、联调测试和回归验证",
+      "验证前后端交互逻辑、异常处理和部署配置的正确性",
+      "根据测试反馈修复问题，优化用户交互体验和性能表现",
+      "完成代码审查，补充必要的接口说明和交付文档"
+    ],
+    "milestone_module": "核心业务模块",
+    "milestone_stage": "开发阶段",
+    "milestone_percent": "50",
+    "milestone_next_step": "功能测试、Bug 修复、代码审查和用户反馈优化",
+    "milestone_risk": "跨模块文件操作的性能、稳定性和部署环境差异需进一步验证"
+  },
+
   "smtp_server": "smtp.example.com",
   "smtp_port": 587,
   "smtp_user": "your@email.com",

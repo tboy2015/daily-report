@@ -519,34 +519,32 @@ def _build_daily_report(date_str: str) -> str:
             ],
         })
 
+    defaults = _load_config().get("defaults", {})
+
     # 组装 plans 数据
-    plans = (
-        [
-            {"plan": "开展当日开发功能的单元测试、联调测试和回归验证"},
-            {"plan": "验证前后端交互逻辑、异常处理和部署配置的正确性"},
-            {"plan": "根据测试反馈修复问题，优化用户交互体验和性能表现"},
-            {"plan": "完成代码审查，补充必要的接口说明和交付文档"},
-        ]
-        if activities
-        else [{"plan": "暂无"}]
-    )
+    default_plans = defaults.get("plans", [
+        "开展当日开发功能的单元测试、联调测试和回归验证",
+        "验证前后端交互逻辑、异常处理和部署配置的正确性",
+        "根据测试反馈修复问题，优化用户交互体验和性能表现",
+        "完成代码审查，补充必要的接口说明和交付文档",
+    ])
+    plans = [{"plan": p} for p in default_plans] if activities else [{"plan": "暂无"}]
 
     # 组装 milestones 数据
     primary = activities[0] if activities else None
     if primary:
-        module = "组件文档模块" if primary["display_name"] == "成就中心" else "核心业务模块"
         cleaned = [_extract_summary_from_subject(s) for s in primary["subjects"][:3] if s]
         completed = "、".join(cleaned) if cleaned else "项目功能开发"
         if len(completed) > 80:
             completed = completed[:80] + "..."
         milestones = [{
             "project": primary["display_name"],
-            "module": module,
-            "stage": "开发阶段",
-            "percent": "50",
+            "module": defaults.get("milestone_module", "核心业务模块"),
+            "stage": defaults.get("milestone_stage", "开发阶段"),
+            "percent": str(defaults.get("milestone_percent", "50")),
             "completed": completed,
-            "next_step": "功能测试、Bug 修复、代码审查和用户反馈优化",
-            "risk": "跨模块文件操作的性能、稳定性和部署环境差异需进一步验证",
+            "next_step": defaults.get("milestone_next_step", "功能测试、Bug 修复、代码审查和用户反馈优化"),
+            "risk": defaults.get("milestone_risk", "跨模块文件操作的性能、稳定性和部署环境差异需进一步验证"),
         }]
     else:
         milestones = [{
