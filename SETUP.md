@@ -159,21 +159,25 @@ Copy-Item config.example.json config.json
 
 ```bash
 # macOS / Linux
-claude mcp add daily-report -- uv run ~/.claude/skills/daily-report/scripts/mcp-server.py
+claude mcp add daily-report --scope user -- uv run ~/.claude/skills/daily-report/scripts/mcp-server.py
 
-# Windows（PowerShell）
-claude mcp add daily-report -- uv run "$env:USERPROFILE\.claude\skills\daily-report\scripts\mcp-server.py"
+# Windows（cmd/PowerShell）—— 用硬编码路径，不要用 $env: 变量
+claude mcp add daily-report --scope user -- uv run "C:\Users\你的用户名\.claude\skills\daily-report\scripts\mcp-server.py"
 ```
 
 **方案 B（pip）：**
 
 ```bash
 # macOS / Linux
-claude mcp add daily-report -- python3 ~/.claude/skills/daily-report/scripts/mcp-server.py
+claude mcp add daily-report --scope user -- python3 ~/.claude/skills/daily-report/scripts/mcp-server.py
 
-# Windows（PowerShell）
-claude mcp add daily-report -- py "$env:USERPROFILE\.claude\skills\daily-report\scripts\mcp-server.py"
+# Windows（cmd/PowerShell）—— 用硬编码路径，不要用 $env: 变量
+claude mcp add daily-report --scope user -- py "C:\Users\你的用户名\.claude\skills\daily-report\scripts\mcp-server.py"
 ```
+
+> **Windows 注意：** 必须用硬编码的绝对路径，`$env:USERPROFILE` 只在 PowerShell 脚本中展开，直接传给 `claude` 命令时不会展开，会导致服务器启动失败。
+>
+> **`--scope user` 说明：** 不加此参数默认注册到当前项目目录，只有在该目录下才生效。`--scope user` 让它全局可用。
 
 验证注册成功：
 
@@ -238,6 +242,12 @@ Python 未安装，参考步骤二中的"安装 Python"。
 
 **MCP 工具无法调用**  
 运行 `claude mcp list` 确认 `daily-report` 状态为 enabled；若为 disabled，检查 Python 路径是否正确，可用 `py scripts/mcp-server.py` 手动运行看报什么错。
+
+**Windows 上 MCP 服务器路径错误**  
+注册时不要用 `$env:USERPROFILE`，它不会在命令行中展开。用完整的绝对路径，如 `C:\Users\theo\.claude\skills\daily-report\scripts\mcp-server.py`。
+
+**MCP 只在某个目录下生效**  
+注册时漏了 `--scope user`，导致只注册到了项目级配置。重新运行注册命令并加上 `--scope user`。
 
 **邮件发送失败**  
 QQ 邮箱需在"设置 → 账户"中开启 SMTP 并生成授权码（非登录密码）；企业邮箱联系管理员确认 SMTP 地址和端口。
