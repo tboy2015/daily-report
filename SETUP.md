@@ -121,10 +121,11 @@ Copy-Item config.example.json config.json
 | `smtp_password` | QQ 邮箱用"授权码"，企业邮箱用密码或应用专用密码 |
 | `to_emails` | 收件人列表，可填多个 |
 
-**Windows 路径写法：** 用正斜杠或双反斜杠均可：
+**Windows 路径写法：** JSON 中反斜杠需转义，推荐直接用正斜杠：
 ```json
 "work_dir": "C:/Users/你的用户名/work/code"
 ```
+> ⚠️ 不能写 `"C:\Users\..."` —— 单反斜杠在 JSON 里是非法转义符，会导致整个配置文件解析失败、所有配置项失效。
 
 **自定义项目中文名**（可选）：将仓库目录名映射为业务名：
 
