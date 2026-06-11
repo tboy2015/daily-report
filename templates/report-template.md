@@ -7,19 +7,13 @@
 一、日报日期：{{日期}}
 
 二、今日工作内容：
-
 {{#each projects}}
 {{index}}、项目名称：{{name}}
-{{#each categories}}
-· {{category}}：
 {{#each items}}
-  - {{this}}
+· {{this}}
 {{/each}}
-{{/each}}
-
 {{/each}}
 {{^projects}}当日无记录
-
 {{/projects}}
 三、明日（下周）工作计划：
 {{#each plans}}
@@ -28,7 +22,7 @@
 
 四、重点项目里程碑情况：
 {{#each milestones}}
-· {{project}} - {{module}}：{{stage}}（{{percent}}%）
+· {{project}} - {{module}}
 · 已完成：{{completed}}
 · 下一步：{{next_step}}
 · 风险点：{{risk}}

@@ -127,7 +127,7 @@ Copy-Item config.example.json config.json
 ```
 > ⚠️ 不能写 `"C:\Users\..."` —— 单反斜杠在 JSON 里是非法转义符，会导致整个配置文件解析失败、所有配置项失效。
 
-**自定义项目中文名**（可选）：将仓库目录名映射为业务名：
+**自定义项目中文名**（可选）：默认映射维护在 `project-name-map.json`，随 skill 一起分发；`config.json` 中的 `project_name_map` 只用于个人覆盖或补充，不需要复制完整默认映射。
 
 ```json
 "project_name_map": {
@@ -145,10 +145,7 @@ Copy-Item config.example.json config.json
     "根据测试反馈修复问题，优化用户交互体验"
   ],
   "milestone_module": "核心业务模块",
-  "milestone_stage": "开发阶段",
-  "milestone_percent": "50",
-  "milestone_next_step": "功能测试、Bug 修复、代码审查",
-  "milestone_risk": "需进一步验证稳定性和部署环境差异"
+  "milestone_next_step": "功能测试、Bug 修复、代码审查"
 }
 ```
 
@@ -229,7 +226,7 @@ copy "C:\Users\你的用户名\.claude\skills\daily-report\SKILL.md" "C:\Users\�
 
 只需编辑 `templates/report-template.md`，保存后下次生成即生效，无需改代码。
 
-模板支持的变量：`{{日期}}`、`{{greeting}}`、`{{name}}`、`{{company}}`、`{{department}}`、`{{phone}}`、`{{email}}`、`{{#each projects}}`、`{{#each plans}}`、`{{#each milestones}}`。
+模板支持的变量：`{{日期}}`、`{{greeting}}`、`{{name}}`、`{{company}}`、`{{department}}`、`{{phone}}`、`{{email}}`、`{{#each projects}}`、`{{#each items}}`、`{{#each plans}}`、`{{#each milestones}}`。
 
 ---
 

@@ -29,23 +29,7 @@ from mailer import load_config, send_daily_report
 mcp = FastMCP("daily-report")
 
 CONFIG_PATH = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "config.json"))
-
-# 内置兜底项目名映射（用户可在配置文件的 project_name_map 中覆盖或扩展）
-_BUILTIN_PROJECT_NAME_MAP = {
-    "anbp": "研发平台-成果中心",
-    "ANBP": "研发平台-成果中心",
-    "achievement-center-console-dev": "研发平台-成果中心",
-    "platform-management-ui": "研发平台-门户管理",
-    "allinone": "一体化项目",
-    "iot": "物联网威胁监测告警平台",
-    "IoT-Threat-Capture-Monitoring-Alerting": "物联网威胁监测告警平台",
-    "IoT-Threat-Capture-Monitoring-Alerting-front": "物联网威胁监测告警平台",
-    "dms-project": "DMS 项目",
-    "dw-production-command-center": "数字化生产指挥中心",
-    "ipd-pm-platform": "研发平台-IPD 项目协同",
-    "dm-mcp-server": "达梦 MCP 工具",
-    "mysql2dm-spring-boot-starter": "MySQL 转达梦适配组件",
-}
+PROJECT_NAME_MAP_PATH = os.path.abspath(os.path.join(SCRIPT_DIR, "..", "project-name-map.json"))
 
 
 def _load_config() -> dict:
@@ -86,9 +70,23 @@ def _get_user_info() -> dict:
 
 def _get_project_name_map() -> dict:
     cfg = _load_config()
-    merged = dict(_BUILTIN_PROJECT_NAME_MAP)
-    merged.update(cfg.get("project_name_map", {}))
+    merged = _load_default_project_name_map()
+    overrides = cfg.get("project_name_map", {})
+    if isinstance(overrides, dict):
+        merged.update(overrides)
     return merged
+
+
+def _load_default_project_name_map() -> dict:
+    """加载随 skill 分发的默认项目名映射。"""
+    if not os.path.exists(PROJECT_NAME_MAP_PATH):
+        return {}
+    try:
+        with open(PROJECT_NAME_MAP_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
 
 
 
@@ -353,6 +351,15 @@ def _render_template(text: str, ctx: dict) -> str:
     return ''.join(result)
 
 
+def _normalize_report_spacing(content: str) -> str:
+    """清理模板循环带来的多余空行，保持邮件正文紧凑。"""
+    text = re.sub(r"\n{3,}", "\n\n", content.strip())
+    # 同一组项目、计划、里程碑内的 bullet 不留空行。
+    while "\n\n·" in text:
+        text = text.replace("\n\n·", "\n·")
+    return text
+
+
 def _format_cn_date(date_str: str) -> str:
     dt = datetime.strptime(date_str, "%Y-%m-%d")
     return dt.strftime("%Y年%m月%d日")
@@ -427,6 +434,66 @@ def _extract_summary_from_subject(subject: Optional[str]) -> str:
     if len(cleaned) > 50:
         cleaned = cleaned[:50] + "..."
     return cleaned
+
+
+def _polish_work_item(summary: str) -> str:
+    """将 commit 摘要整理为日报中的业务化单层工作项。"""
+    if not summary:
+        return "完成项目功能调整，支撑业务流程稳定运行"
+
+    text = summary.strip().rstrip("。")
+
+    # 常见提交信息的业务化改写，避免直接暴露实现口径。
+    replacements = [
+        (r"实现\s*SDH\s*南向客户端及\s*Token/VC4\s*接口，?增强配置界面",
+         "完成 SDH 南向系统集成，支持业务认证、通道资源创建等核心能力，并优化南向配置页面的展示与维护体验"),
+        (r"SDH\s*南向客户端及\s*Token/VC4\s*接口",
+         "SDH 南向系统接入、业务认证和通道资源创建能力"),
+        (r"Token/VC4\s*接口", "业务认证和通道资源接口"),
+        (r"Token", "业务认证"),
+        (r"VC4", "通道资源"),
+        (r"客户端", "服务接入"),
+    ]
+    for pattern, repl in replacements:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
+
+    # 已经是动作开头时只补齐结果导向的语气。
+    action_prefixes = (
+        "完成", "完善", "优化", "修复", "解决", "新增", "补充",
+        "调整", "改造", "实现", "支持", "梳理", "接入",
+    )
+    if not text.startswith(action_prefixes):
+        text = f"完成{text}"
+    elif text.startswith("实现"):
+        text = "完成" + text[2:]
+
+    if not any(marker in text for marker in ["提升", "保证", "确保", "支撑", "避免", "满足", "优化"]):
+        text += "，支撑相关业务流程稳定运行"
+
+    return text + "。"
+
+
+def _build_flat_work_items(activity: Optional[Dict[str, Any]]) -> List[str]:
+    """生成单层工作内容，避免分类标题和子项嵌套导致邮件排版凌乱。"""
+    grouped = _extract_detailed_work_items(activity)
+    if not grouped:
+        return []
+
+    preferred_order = ["功能开发", "后端开发", "前端开发", "配置更新", "开发工具", "文档整理", "问题修复", "其他"]
+    items: List[str] = []
+    for category in preferred_order:
+        summaries = grouped.get(category, [])
+        for summary in summaries:
+            items.append(_polish_work_item(summary))
+
+    # 兜底包含未知分类，保持发现顺序。
+    for category, summaries in grouped.items():
+        if category in preferred_order:
+            continue
+        for summary in summaries:
+            items.append(_polish_work_item(summary))
+
+    return items
 
 
 def _identify_work_type(subjects: Optional[List[str]], files: Optional[List[str]]) -> Dict[str, float]:
@@ -536,27 +603,55 @@ def _extract_detailed_work_items(activity: Optional[Dict[str, Any]]) -> Dict[str
 
 
 
+def _merge_activities_by_display_name(activities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """将映射到同一中文项目名的多个仓库合并为一个活动，保持仓库发现顺序。"""
+    merged: Dict[str, Dict[str, Any]] = {}
+    order: List[str] = []
+    for act in activities:
+        name = act["display_name"]
+        if name not in merged:
+            merged[name] = {
+                "repo": act["repo"],
+                "path": act["path"],
+                "display_name": name,
+                "subjects": list(act.get("subjects", [])),
+                "files": list(act.get("files", [])),
+                "commit_blocks": list(act.get("commit_blocks", [])),
+            }
+            order.append(name)
+        else:
+            tgt = merged[name]
+            tgt["subjects"].extend(act.get("subjects", []))
+            tgt["files"].extend(act.get("files", []))
+            tgt["commit_blocks"].extend(act.get("commit_blocks", []))
+
+    for tgt in merged.values():
+        tgt["files"] = sorted(set(tgt["files"]))
+
+    return [merged[name] for name in order]
+
+
 def _build_daily_report(date_str: str) -> str:
     cn_date = _format_cn_date(date_str)
     user = _get_user_info()
 
-    activities = []
+    raw_activities = []
     for repo_name, repo_path in _find_git_repos():
         activity = _repo_activity(repo_name, repo_path, date_str)
         if activity:
-            activities.append(activity)
+            raw_activities.append(activity)
+
+    # 按中文项目名合并多个仓库（如前端/后端 repo 映射到同一业务项目）
+    activities = _merge_activities_by_display_name(raw_activities)
 
     # 组装 projects 数据
     projects = []
     for i, activity in enumerate(activities, 1):
-        work_items = _extract_detailed_work_items(activity)
+        work_items = _build_flat_work_items(activity)
         projects.append({
             "index": str(i),
             "name": activity["display_name"],
-            "categories": [
-                {"category": cat, "items": items}
-                for cat, items in work_items.items()
-            ],
+            "items": work_items,
         })
 
     defaults = _load_config().get("defaults", {})
@@ -573,25 +668,22 @@ def _build_daily_report(date_str: str) -> str:
     # 组装 milestones 数据
     primary = activities[0] if activities else None
     if primary:
-        cleaned = [_extract_summary_from_subject(s) for s in primary["subjects"][:3] if s]
-        completed = "、".join(cleaned) if cleaned else "项目功能开发"
+        primary_items = _build_flat_work_items(primary)
+        cleaned = [item.rstrip("。") for item in primary_items[:3] if item]
+        completed = "；".join(cleaned) if cleaned else "完成项目功能开发"
         if len(completed) > 80:
             completed = completed[:80] + "..."
         milestones = [{
             "project": primary["display_name"],
             "module": defaults.get("milestone_module", "核心业务模块"),
-            "stage": defaults.get("milestone_stage", "开发阶段"),
-            "percent": str(defaults.get("milestone_percent", "50")),
             "completed": completed,
             "next_step": defaults.get("milestone_next_step", "功能测试、Bug 修复、代码审查和用户反馈优化"),
-            "risk": defaults.get("milestone_risk", "跨模块文件操作的性能、稳定性和部署环境差异需进一步验证"),
+            "risk": "无",
         }]
     else:
         milestones = [{
             "project": "暂无",
             "module": "—",
-            "stage": "—",
-            "percent": "—",
             "completed": "当日无记录",
             "next_step": "暂无",
             "risk": "暂无",
@@ -614,7 +706,7 @@ def _build_daily_report(date_str: str) -> str:
     with open(template_path, "r", encoding="utf-8") as f:
         template = f.read()
 
-    return _render_template(template, ctx)
+    return _normalize_report_spacing(_render_template(template, ctx))
 
 
 def _collect_git(date_str: str) -> str:
