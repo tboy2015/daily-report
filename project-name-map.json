@@ -1,8 +1,8 @@
 {
-  "anbp": "成就中心",
-  "ANBP": "成就中心",
+  "anbp": "研发平台-成就中心",
+  "ANBP": "研发平台-成就中心",
   "achievement-center-console-dev": "研发平台-成果中心",
-  "platform-management-ui": "平台管理",
+  "platform-management-ui": "研发平台-门户",
   "allinone": "一体化项目",
   "iot": "物联网威胁监测告警平台",
   "IoT-Threat-Capture-Monitoring-Alerting": "物联网威胁监测告警平台",
@@ -11,5 +11,6 @@
   "dw-production-command-center": "配置生产支持系统",
   "ipd-pm-platform": "研发平台-IPD项目管理",
   "dm-mcp-server": "达梦 MCP 工具",
-  "mysql2dm-spring-boot-starter": "MySQL 转达梦适配组件"
+  "mysql2dm-spring-boot-starter": "MySQL 转达梦适配组件",
+  "pmcc-new": "两票系统改造"
 }

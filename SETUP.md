@@ -185,6 +185,14 @@ claude mcp list
 
 输出中出现 `daily-report` 即可。
 
+### Codex 用户
+
+Codex 不使用上面的 `claude mcp add` 注册命令。本仓库已包含 Codex 插件清单和 MCP 启动配置，请按照 [CODEX.md](CODEX.md) 安装本地插件。安装或更新后必须完全退出并重新打开 Codex，再新建一个任务，新的 Skill 和 MCP 工具才会生效。
+
+如果以前曾用 `codex mcp add daily-report ...` 手工注册过同名服务，请先运行
+`codex mcp remove daily-report`。全局同名配置会与插件随附的 MCP 服务冲突，尤其是
+旧配置直接调用系统 `python3` 时，常因缺少 `mcp` 依赖而启动失败。
+
 ---
 
 ## 步骤五：注册 Skill

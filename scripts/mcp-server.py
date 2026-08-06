@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# dependencies = ["mcp"]
+# dependencies = ["mcp<2"]
 # ///
 """
 Daily Report MCP Server
@@ -18,9 +18,20 @@ import contextlib
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 
-from mcp.server.fastmcp import FastMCP
-
 SCRIPT_DIR = os.path.dirname(__file__)
+
+try:
+    from mcp.server.fastmcp import FastMCP
+except ModuleNotFoundError:
+    try:
+        from mcp.server.mcpserver import MCPServer as FastMCP
+    except ModuleNotFoundError:
+        repo_dir = os.path.abspath(os.path.join(SCRIPT_DIR, ".."))
+        venv_python = os.path.join(repo_dir, ".venv", "bin", "python")
+        if os.path.exists(venv_python) and os.path.abspath(sys.executable) != os.path.abspath(venv_python):
+            os.execv(venv_python, [venv_python, *sys.argv])
+        raise
+
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 

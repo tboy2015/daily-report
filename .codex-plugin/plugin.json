@@ -1,0 +1,36 @@
+{
+  "name": "daily-report",
+  "version": "0.1.0+codex.20260804140411",
+  "description": "Generate, save, and email daily work reports from Git commits and coding conversations.",
+  "author": {
+    "name": "tboy2015"
+  },
+  "homepage": "https://github.com/tboy2015/daily-report",
+  "repository": "https://github.com/tboy2015/daily-report",
+  "keywords": [
+    "daily-report",
+    "git",
+    "productivity",
+    "email"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Daily Report",
+    "shortDescription": "Generate and send daily work reports",
+    "longDescription": "Collect today's Git commits and coding conversations, summarize them into the configured Chinese daily-report template, save the report, and optionally send it by email.",
+    "developerName": "tboy2015",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/tboy2015/daily-report",
+    "defaultPrompt": [
+      "\u751f\u6210\u5e76\u53d1\u9001\u4eca\u5929\u7684\u5de5\u4f5c\u65e5\u62a5",
+      "\u751f\u6210\u4eca\u5929\u7684\u5de5\u4f5c\u65e5\u62a5\uff0c\u4f46\u4e0d\u8981\u53d1\u9001\u90ae\u4ef6"
+    ],
+    "brandColor": "#8B5E3C"
+  }
+}
