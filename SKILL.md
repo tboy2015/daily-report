@@ -1,19 +1,18 @@
 ---
 name: daily-report
-description: 自动生成每日工作日报，汇总当天的 git 提交记录和 Claude Code 对话内容，按固定模板生成日报，默认保存到 ~/Documents/daily-reports/YYYY-MM-DD.md 并发送到邮箱，同时输出正文。
-user-invocable: true
+description: 自动生成每日工作日报，汇总当天的 git 提交记录以及 Claude Code、Codex 对话内容，按固定模板生成日报，默认保存并发送到邮箱，同时输出正文。
 allowed-tools: [
-  "mcp__daily-report__get_daily_data",
-  "mcp__daily-report__save_daily_report",
-  "mcp__daily-report__send_daily_report_email",
-  "mcp__daily-report__generate_daily_report",
-  "mcp__daily-report__get_email_config"
+  "mcp__daily_report__get_daily_data",
+  "mcp__daily_report__collect_codex_conversations",
+  "mcp__daily_report__save_daily_report",
+  "mcp__daily_report__send_daily_report_email",
+  "mcp__daily_report__get_email_config"
 ]
 ---
 
 # 日报生成与发送 Skill
 
-自动生成每日工作日报，从 git 提交记录和 Claude Code 对话记录中提取工作内容，严格按照固定模板生成日报，并默认保存、发送邮件、在对话中输出正文。
+自动生成每日工作日报，从 git 提交记录以及 Claude Code、Codex 对话记录中提取工作内容，严格按照固定模板生成日报，并默认保存、发送邮件、在对话中输出正文。
 
 ---
 
@@ -24,6 +23,7 @@ allowed-tools: [
 - 仅处理当天（00:00 - 23:59）的数据
 - 扫描配置文件 `paths.work_dir` 下的所有 git 仓库（默认 `~/work`）
 - 扫描配置文件 `paths.projects_dir` 下的当天对话记录（默认 `~/.claude/projects`）
+- 扫描配置文件 `paths.codex_sessions_dir` 下的当天 Codex 对话记录（默认 `~/.codex/sessions`，同时包含归档会话）
 
 ### 2. 模板严格约束
 
@@ -31,9 +31,10 @@ allowed-tools: [
 
 模板文件位置：`templates/report-template.md`（相对于 skill 目录）
 
-### 3. 默认输出方式（Claude 合成）
+### 3. 默认输出方式（模型归纳）
 
-- 默认流程：调用 `get_daily_data(date)` 拿到原始 git 数据（每条 commit 的改动文件、变更统计行数）和对话记录 → 由 Claude 归纳出丰富、按项目合并的工作内容 → 调用 `save_daily_report(content, date)` 保存 → 调用 `send_daily_report_email()` 发送 → 在对话中输出完整正文
+- 唯一默认流程：调用 `get_daily_data(date)` 获取完整原始数据 → 建立项目与工作主题覆盖清单 → 由模型归纳正文 → 调用 `save_daily_report(content, date)` 保存 → 调用 `send_daily_report_email()` 发送 → 在对话中输出完整正文
+- **禁止调用 `generate_daily_report` 生成正式日报**。该工具是仅按 Git 生成的低保真兼容入口，会遗漏对话项目和排查过程
 - 内容必须基于 `get_daily_data` 返回的真实数据归纳，禁止编造未发生的工作
 - 只有用户明确说“不发送”“仅生成”“只输出”时，跳过 `send_daily_report_email`
 - 绝对禁止为了采集数据而使用 Bash、shell、终端命令、`cd`、管道、`grep`、`git log` 等外部命令；必须使用 daily-report MCP 工具
@@ -51,18 +52,27 @@ allowed-tools: [
 调用 `get_daily_data(date)`，它会一次返回：
 
 - 每个 git 仓库当天的 commit message、每条 commit 的改动文件清单、变更统计（含每个文件的增删行数）
-- 当天 Claude Code 对话中的用户需求、修改指令、测试反馈
+- 当天 Claude Code 与 Codex 对话中的用户需求、修改指令、测试反馈
 
 不要使用 Bash 手写扫描命令。诊断邮件配置时才调用 `get_email_config`。
 
+拿到数据后，先在内部建立覆盖清单（不写入日报）：
+
+- 列出 Git 和对话中出现的全部项目
+- 为每个项目列出独立工作主题，例如功能开发、问题排查、环境联调、方案设计、文档交付、工具维护
+- 合并同一问题的连续追问，但不得因项目没有 Git 提交而丢弃它
+- 忽略技能调用、环境上下文、附件占位等元数据
+
 ### Step 2: 归纳丰富的工作内容（核心）
 
-**以 git commit 的中文内容为主要素材，进行概括和润色**，把简短的提交信息扩写成通顺、有业务价值的工作描述。对话记录仅用于辅助理解功能背景，不作为数据来源逐条罗列。
+Git 提交和有效对话都是正式数据源：Git 用于确认已落地的改动，对话用于补充问题排查、方案设计、联调测试、环境启动、文档或表格交付，以及尚未提交但当天实际开展的工作。
 
 要求：
 - 只描述业务层面做了什么、解决了什么、达成什么效果，语言通顺自然
 - **严禁出现具体类名、文件名、目录路径、代码行数、技术栈名词等技术细节**（如 `AssetsCategoryServiceImpl`、`riskAlerts/detail.vue`、`+106 行`、`Vue/MyBatis` 一律不写）
 - 多条相关 commit 合并成一条概括，避免逐条复述
+- 对话中同一问题的连续追问合并为一个完整工作主题，但要保留“问题、处理动作、结果或当前状态”中的有效信息
+- 仅有对话证据时，使用“排查、梳理、设计、联调、推进”等与证据强度匹配的动词；只有 Git 或明确反馈证明已落地时才写“完成、修复、实现”
 - 禁止“进行了相关工作”这类空话，也禁止编造 commit 里没有的工作
 
 示例：
@@ -71,7 +81,7 @@ allowed-tools: [
 
 ### Step 3: 合并并归纳工作内容
 
-**按项目分组**，将同一仓库的 git 提交和同一工作目录的对话记录合并。
+**按项目分组**，将同一仓库的 Git 提交和同一工作目录的对话记录合并。所有包含有效工作主题的项目都必须出现在日报中；“无 Git 提交”不是省略项目的理由。
 
 项目名称必须使用中文业务名，不使用英文仓库名。若 MCP 返回类似 `中文名（repo）`，日报中只写中文名；若没有明确映射，再用“中文名（英文仓库名）”兜底。
 
@@ -93,7 +103,8 @@ allowed-tools: [
 - 禁止模糊表述："进行了相关工作"、"完成了一些任务"
 - 推荐表述："完成 XXX 模块开发"、"修复 XXX bug"、"优化 XXX 逻辑"
 - 精简但不遗漏：优先合并同一功能链路中的前端、后端、配置、测试、修复内容；不要只写最后一次提交或最后一个对话
-- 对同一项目建议输出 2-5 条工作 bullet，覆盖主要工作面；若内容很多，按“功能建设、配置联调、体验优化、问题修复”等业务视角合并，避免分层嵌套。
+- 对同一项目通常输出 1-6 条工作 bullet，以覆盖清单中的独立主题为准，不为了凑数量拆分，也不得只保留最后一次提交
+- 写完后逐项核对覆盖清单：每个项目、每个重要工作主题都应有对应 bullet；遗漏时先补齐再保存
 
 ### 工作内容书写说明
 
@@ -113,11 +124,11 @@ allowed-tools: [
 | 环境搭建/初始化 | 开始核心功能开发 |
 | 设计/调研 | 开始具体实现 |
 
-明日工作计划输出为**统一列表**（不按项目分组）。
+明日工作计划输出为**统一列表**（不按项目分组）。优先针对今日未闭环问题和下一步动作生成具体计划；只有完全没有可推导线索时才使用通用计划，避免每日报告固定输出同样四条。
 
 ### Step 5: 推导重点项目里程碑
 
-里程碑信息输出为**统一列表**（不按项目编号），格式：
+里程碑信息输出为**统一列表**（不按项目编号）。对当天有明确交付、重大排查或方案产出的项目分别输出，不能只取第一个 Git 项目。格式：
 - `项目名 - 模块名`
 - `已完成：具体完成情况`
 - `下一步：即将开展的工作`
@@ -127,7 +138,7 @@ allowed-tools: [
 
 严格按照 `templates/report-template.md` 中的模板格式由 Claude 填充正文（章节、分隔线、落款一字不差）。落款的姓名、公司、电话、邮箱来自 `config.json` 的 `user` 字段。
 
-1. 调用 `save_daily_report(content, date)` 保存到 `~/Documents/daily-reports/YYYY-MM-DD.md`
+1. 调用 `save_daily_report(content, date)` 保存日报
 2. 默认调用 `send_daily_report_email()` 发送邮件；只有用户要求不发送时跳过这一步
 3. 在对话中输出完整日报正文
 
@@ -150,7 +161,7 @@ allowed-tools: [
 
 ## 邮件发送
 
-默认发送邮件，调用 `generate_daily_report(date, send_email=true)`。
+默认先调用 `save_daily_report` 保存模型归纳后的完整正文，再将其返回的文件路径传给 `send_daily_report_email`。不要调用 `generate_daily_report` 替代这两个步骤。
 
 若配置文件不存在，提示用户先配置邮件信息。
 
@@ -200,11 +211,12 @@ cp config.example.json config.json
 ```
 1. 调用 get_daily_data(date) 获取当天 git 提交（含每条 commit 改动文件与变更行数）与对话记录
 2. 按中文项目名合并多个仓库（前端/后端 repo 归为同一业务项目）
-3. Claude 归纳丰富的工作内容：做了什么 + 模块 + 技术方案/改动规模 + 结果
-4. 推导明日工作计划（统一列表）
-5. 推导重点项目里程碑（统一列表）
-6. 按 templates/report-template.md 模板填充日报正文
-7. save_daily_report 保存
-8. 默认 send_daily_report_email 发送邮件
-9. 在对话中输出完整日报正文
+3. 建立项目/主题覆盖清单，Git 与有效对话均作为正式数据源
+4. 模型归纳丰富的工作内容：做了什么 + 模块 + 结果或当前状态
+5. 推导明日工作计划（统一列表）
+6. 推导重点项目里程碑（统一列表）
+7. 按 templates/report-template.md 模板填充日报正文
+8. save_daily_report 保存
+9. 默认 send_daily_report_email 发送邮件
+10. 在对话中输出完整日报正文
 ```

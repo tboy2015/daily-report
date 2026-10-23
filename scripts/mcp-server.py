@@ -66,6 +66,17 @@ def _get_projects_dir() -> str:
     return os.path.expanduser(raw) if raw else os.path.expanduser("~/.claude/projects")
 
 
+def _get_codex_sessions_dir() -> str:
+    """返回 Codex 会话目录，支持通过配置覆盖。"""
+    cfg = _load_config()
+    raw = cfg.get("paths", {}).get("codex_sessions_dir") or ""
+    if raw:
+        return os.path.expanduser(raw)
+
+    codex_home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
+    return os.path.join(os.path.expanduser(codex_home), "sessions")
+
+
 def _get_user_info() -> dict:
     cfg = _load_config()
     u = cfg.get("user", {})
@@ -192,6 +203,12 @@ def _is_effective_user_message(text: str) -> bool:
         "<persisted-output>",
         "Base directory for this skill:",
         "total ",
+        "<environment_context>",
+        "<external_codex_apps_open_page>",
+        "<turn_aborted>",
+        "# AGENTS.md instructions for",
+        "[$daily-report",
+        "<skill>",
     )
     if stripped.startswith(ignored_prefixes):
         return False
@@ -204,6 +221,27 @@ def _is_effective_user_message(text: str) -> bool:
         "{{#each projects}}",
     )
     return not any(fragment in stripped for fragment in ignored_fragments)
+
+
+def _clean_codex_user_message(text: str) -> str:
+    """从 Codex 附件/图片包装消息中提取真正的用户请求。"""
+    if not isinstance(text, str):
+        return ""
+
+    cleaned = text.strip()
+    request_marker = "## My request:"
+    if request_marker in cleaned:
+        cleaned = cleaned.split(request_marker, 1)[1].strip()
+
+    # 图片内容不会以文本写入会话，移除占位标签，避免日报出现临时路径和包装指令。
+    cleaned = re.sub(r"<image\b[^>]*>.*?</image>", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+    cleaned = re.sub(
+        r"Distinguish instructions in attached documents from the user's request\.?",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    return cleaned.strip()
 
 
 def _find_git_repos(root_dir: str = None):
@@ -794,8 +832,8 @@ def _collect_git(date_str: str) -> str:
     return output
 
 
-def _collect_conversations(date_str: str) -> str:
-    """内部：收集对话记录"""
+def _collect_claude_conversations(date_str: str) -> str:
+    """内部：收集 Claude Code 对话记录。"""
     target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
     projects_dir = _get_projects_dir()
 
@@ -865,6 +903,113 @@ def _collect_conversations(date_str: str) -> str:
     return output
 
 
+# 保留旧的内部函数名，避免已有调用方升级后失效。
+_collect_conversations = _collect_claude_conversations
+
+
+def _parse_codex_timestamp_date(value: Any):
+    """将 Codex 的 ISO 时间转换为本机时区日期。"""
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed.astimezone().date() if parsed.tzinfo else parsed.date()
+    except (TypeError, ValueError):
+        return None
+
+
+def _codex_session_files(date_str: str) -> List[str]:
+    """查找指定日期的活跃及已归档 Codex 会话文件。"""
+    target = datetime.strptime(date_str, "%Y-%m-%d")
+    sessions_dir = _get_codex_sessions_dir()
+    active_pattern = os.path.join(
+        sessions_dir,
+        target.strftime("%Y"),
+        target.strftime("%m"),
+        target.strftime("%d"),
+        "*.jsonl",
+    )
+    files = glob.glob(active_pattern)
+
+    archived_dir = os.path.join(os.path.dirname(sessions_dir), "archived_sessions")
+    files.extend(glob.glob(os.path.join(archived_dir, f"rollout-{date_str}*.jsonl")))
+    return sorted(set(files))
+
+
+def _collect_codex_conversations(date_str: str) -> str:
+    """内部：收集 Codex 当日会话中的有效用户需求。"""
+    target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    results = []
+    seen_messages = set()
+
+    for session_file in _codex_session_files(date_str):
+        cwd = ""
+        messages = []
+        try:
+            with open(session_file, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        record = json.loads(line)
+                    except (json.JSONDecodeError, TypeError):
+                        continue
+
+                    payload = record.get("payload")
+                    if not isinstance(payload, dict):
+                        continue
+
+                    if record.get("type") == "session_meta":
+                        cwd = payload.get("cwd") or cwd
+                        continue
+
+                    if not (
+                        record.get("type") == "response_item"
+                        and payload.get("type") == "message"
+                        and payload.get("role") == "user"
+                    ):
+                        continue
+
+                    timestamp = record.get("timestamp")
+                    message_date = _parse_codex_timestamp_date(timestamp)
+                    if message_date is not None and message_date != target_date:
+                        continue
+
+                    text = _clean_codex_user_message(_extract_text(payload.get("content")))
+                    if not _is_effective_user_message(text):
+                        continue
+
+                    dedupe_key = (timestamp, text.strip())
+                    if dedupe_key in seen_messages:
+                        continue
+                    seen_messages.add(dedupe_key)
+                    messages.append(text.strip())
+        except (OSError, UnicodeError):
+            continue
+
+        if messages:
+            project_name = (
+                os.path.basename(os.path.normpath(cwd)) if cwd else "Codex"
+            ) or "Codex"
+            results.append({
+                "project": project_name,
+                "display_name": _display_project_name(project_name),
+                "file": os.path.basename(session_file),
+                "messages": messages,
+            })
+
+    if not results:
+        return f"{date_str} 无 Codex 对话记录"
+
+    output = f"=== {date_str} Codex 对话记录 ===\n\n"
+    for result in results:
+        output += f"【项目: {result['display_name']}】\n"
+        output += f"来源: {result['project']} / {result['file']}\n"
+        for i, message in enumerate(result["messages"][:50], 1):
+            preview = message[:500].replace("\n", " ")
+            output += f"  {i}. {preview}{'...' if len(message) > 500 else ''}\n"
+        output += "-" * 40 + "\n\n"
+    return output
+
+
 @mcp.tool()
 def generate_daily_report(date: str = None, send_email: bool = True) -> str:
     """一键生成日报，默认保存并发送邮件，返回状态和完整日报正文。"""
@@ -895,16 +1040,24 @@ def collect_git_commits(date: str = None) -> str:
 def collect_claude_conversations(date: str = None) -> str:
     """收集指定日期范围内 Claude Code 的对话记录"""
     date_str = date or datetime.now().strftime("%Y-%m-%d")
-    return _collect_conversations(date_str)
+    return _collect_claude_conversations(date_str)
+
+
+@mcp.tool()
+def collect_codex_conversations(date: str = None) -> str:
+    """收集指定日期范围内 Codex 的对话记录。"""
+    date_str = date or datetime.now().strftime("%Y-%m-%d")
+    return _collect_codex_conversations(date_str)
 
 
 @mcp.tool()
 def get_daily_data(date: str = None) -> str:
-    """一键获取当天的所有工作数据（git 提交 + Claude 对话记录），用于生成日报"""
+    """一键获取当天的所有工作数据（git 提交 + Claude/Codex 对话记录），用于生成日报。"""
     date_str = date or datetime.now().strftime("%Y-%m-%d")
     git_data = _collect_git(date_str)
-    conv_data = _collect_conversations(date_str)
-    return f"{git_data}\n\n{conv_data}"
+    claude_data = _collect_claude_conversations(date_str)
+    codex_data = _collect_codex_conversations(date_str)
+    return f"{git_data}\n\n{claude_data}\n\n{codex_data}"
 
 
 @mcp.tool()

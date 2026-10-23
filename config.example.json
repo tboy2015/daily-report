@@ -11,7 +11,9 @@
   },
 
   "paths": {
-    "work_dir": "~/work/your-code-dir"
+    "work_dir": "~/work/your-code-dir",
+    "projects_dir": "~/.claude/projects",
+    "codex_sessions_dir": "~/.codex/sessions"
   },
 
   "defaults": {

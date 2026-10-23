@@ -1,6 +1,6 @@
 {
   "name": "daily-report",
-  "version": "0.1.0+codex.20260804140411",
+  "version": "0.3.0",
   "description": "Generate, save, and email daily work reports from Git commits and coding conversations.",
   "author": {
     "name": "tboy2015"

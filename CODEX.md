@@ -5,7 +5,7 @@
 ## 前置条件
 
 1. 安装 [uv](https://docs.astral.sh/uv/)。
-2. 复制 `config.example.json` 为 `config.json`，填写用户信息、代码扫描目录和 SMTP 配置。
+2. 复制 `config.example.json` 为 `config.json`，填写用户信息、代码扫描目录和 SMTP 配置。Codex 对话默认从 `~/.codex/sessions`（含归档会话）读取，也可通过 `paths.codex_sessions_dir` 覆盖。
 
 MCP 服务由 Codex 插件通过 `scripts/codex-mcp-launcher.sh` 启动。启动器兼容终端与 macOS 桌面应用不同的 PATH 环境，并使用 `uv` 根据脚本头部声明自动准备依赖。
 

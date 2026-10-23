@@ -98,7 +98,9 @@ Copy-Item config.example.json config.json
     "email": "zhangsan@company.com"
   },
   "paths": {
-    "work_dir": "~/work/code"
+    "work_dir": "~/work/code",
+    "projects_dir": "~/.claude/projects",
+    "codex_sessions_dir": "~/.codex/sessions"
   },
   "smtp_server": "smtp.qq.com",
   "smtp_port": 587,
@@ -118,6 +120,8 @@ Copy-Item config.example.json config.json
 | `user.name` | 落款姓名 |
 | `user.greeting` | 日报开头用语，如"南网业务处张三" |
 | `paths.work_dir` | 存放所有 git 仓库的根目录，MCP 会递归扫描其下所有仓库 |
+| `paths.projects_dir` | Claude Code 对话目录，默认 `~/.claude/projects` |
+| `paths.codex_sessions_dir` | Codex 会话目录，默认 `~/.codex/sessions` |
 | `smtp_password` | QQ 邮箱用"授权码"，企业邮箱用密码或应用专用密码 |
 | `to_emails` | 收件人列表，可填多个 |
 
